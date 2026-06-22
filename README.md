@@ -136,7 +136,7 @@ M5Burner 适合先烧录官方/现成固件，用来确认 Windows 驱动、USB 
 
 当前电脑已经识别到设备：
 
-- 串口：`COM3`
+- 当前串口：`COM4`
 - 波特率：`115200`
 
 操作步骤：
@@ -144,7 +144,7 @@ M5Burner 适合先烧录官方/现成固件，用来确认 Windows 驱动、USB 
 1. 用 USB-C 连接 Stick S3，并保持在 USB 模式。
 2. 启动 `tools\M5Burner-v3-beta-win-x64\M5Burner.exe`。
 3. 选择对应的 Stick S3 / M5Stick 设备分类。
-4. 选择串口 `COM3`。
+4. 选择串口 `COM4`。如果设备重新插拔后端口变化，以 Windows 设备管理器或 PlatformIO 显示的端口为准。
 5. 波特率使用 `115200`。
 6. 先烧录一个官方 demo，确认设备能正常刷机和启动。
 
@@ -199,8 +199,8 @@ pio device monitor
 
 当前 `platformio.ini` 已经固定：
 
-- `upload_port = COM3`
-- `monitor_port = COM3`
+- `upload_port = COM4`
+- `monitor_port = COM4`
 - `monitor_speed = 115200`
 - Flash: 8MB
 - PSRAM: OPI 8MB
