@@ -54,7 +54,6 @@ void rollDie() {
   lastRollMs = now;
   value = random(1, 7);
   drawDieFace(value);
-  M5.Speaker.tone(880, 70);
 }
 
 bool didShake() {
@@ -76,7 +75,6 @@ void setup() {
   randomSeed(esp_random());
   M5.Display.setRotation(1);
   M5.Display.setBrightness(160);
-  M5.Speaker.setVolume(96);
   imuReady = M5.Imu.getType() != m5::imu_none;
 
   drawDieFace(value);
