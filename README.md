@@ -33,15 +33,18 @@
 
 番茄钟说明：
 
-- 进入后先看到番茄钟菜单：`Start / Records`
+- 进入番茄钟后切换为竖屏 UI
+- 番茄钟菜单包含：`Start / Records / Exit`
 - `Start` 进入时长选择，支持 `15 / 25 / 50` 分钟，默认 `25` 分钟
 - `Records` 查看本地最近 10 条番茄钟记录
+- `Exit` 返回横屏主菜单
 - 在时长选择页，按 BtnB 切换时长，按 BtnA 开始
 - 开始后屏幕切到竖屏沙漏
-- 蓝色液体按所选总时长计算流速，逐步从上半部分流到下半部分
-- 沙漏运行时只局部重绘液体和时间，减少屏幕闪烁
+- 蓝色颗粒按所选总时长计算流速，逐步从上半部分流到下半部分
+- 沙漏运行时只局部重绘颗粒和时间，减少屏幕闪烁
 - 进入竖屏沙漏后重新采集 IMU 重力基准，用于后续反转检测
-- 摇动或倾斜设备时，蓝色液体会按相对重力方向产生倾斜、偏移和滴落变化
+- 沙漏效果参考颗粒模拟思路：顶部按剩余量绘制蓝色颗粒，底部颗粒按重力和倾斜方向下落/滑动
+- 摇动或倾斜设备时，蓝色颗粒会按相对重力方向偏移、滑落，滴流也会偏移
 - 设备倒置 180 度时，会显示 `Reset / Exit` 菜单
 - 倒置菜单里按 BtnB 上下选择，按 BtnA 确认
 - 时间到后会轻声滴滴两下，并记录为完成
@@ -61,7 +64,7 @@
 当前亮度在 `src/main.cpp` 里配置：
 
 ```cpp
-constexpr uint8_t kDisplayBrightness = 160;
+constexpr uint8_t kDisplayBrightness = 90;
 M5.Display.setBrightness(kDisplayBrightness);
 ```
 
@@ -74,7 +77,7 @@ M5.Display.getBrightness();
 启动日志会输出当前显示配置：
 
 ```text
-display brightness=160 ui_loop=50Hz clock_redraw=1Hz
+display brightness=90 ui_loop=50Hz clock_redraw=1Hz
 ```
 
 这里的 `ui_loop=50Hz` 是程序主循环/交互轮询频率，`clock_redraw=1Hz` 是时钟页面重画频率。ST7789 面板自身的硬件扫描刷新率没有在当前 M5Unified 抽象里作为通用运行时数值暴露出来，所以项目里按“应用重画频率”来控制功耗和观感。

@@ -14,12 +14,19 @@ constexpr uint32_t kRollCooldownMs = 650;
 constexpr uint32_t kClockRefreshMs = 1000;
 constexpr uint32_t kUiFrameDelayMs = 20;
 constexpr uint32_t kPomodoroFrameMs = 60;
-constexpr uint8_t kDisplayBrightness = 160;
+constexpr uint8_t kDisplayBrightness = 90;
 constexpr uint8_t kPomodoroDoneVolume = 28;
 constexpr float kShakeThreshold = 1.6f;
 constexpr float kInvertThreshold = -0.70f;
 constexpr int kHourglassTopY = 30;
 constexpr int kHourglassBottomY = 226;
+constexpr int kGrainCell = 2;
+constexpr int kGrainW = 57;
+constexpr int kGrainH = 88;
+constexpr int kGrainMid = kGrainH / 2;
+constexpr int kGrainX0 = 10;
+constexpr int kGrainY0 = 36;
+constexpr int kGrainCenter = kGrainW / 2;
 
 enum class Screen {
   Menu,
@@ -40,7 +47,7 @@ constexpr const char *kMenuItems[] = {
 constexpr int kMenuCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
 constexpr uint16_t kPomodoroMinutes[] = {15, 25, 50};
 constexpr int kPomodoroCount = sizeof(kPomodoroMinutes) / sizeof(kPomodoroMinutes[0]);
-constexpr const char *kPomodoroMenuItems[] = {"Start", "Records"};
+constexpr const char *kPomodoroMenuItems[] = {"Start", "Records", "Exit"};
 constexpr int kPomodoroMenuCount = sizeof(kPomodoroMenuItems) / sizeof(kPomodoroMenuItems[0]);
 constexpr const char *kPromptItems[] = {"Reset", "Exit"};
 
@@ -67,6 +74,9 @@ float pomodoroBaseAy = 1.0f;
 float pomodoroBaseAz = 0.0f;
 float liquidLeanX = 0.0f;
 float liquidLeanY = 0.0f;
+bool grainGrid[kGrainH][kGrainW] = {};
+int grainCount = 0;
+int grainCapacity = 0;
 String lastClockText;
 AppConfig appConfig;
 WifiPortal wifiPortal;
@@ -263,59 +273,67 @@ void drawClockChrome(const String &subtitle) {
 }
 
 void drawPomodoroSelect() {
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
+  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
-  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
-  display.drawString("Pomodoro", w / 2, 18);
+  display.drawString("Duration", w / 2, 18);
 
   for (int i = 0; i < kPomodoroCount; ++i) {
-    const int x = 16 + i * 74;
+    const int y = 58 + i * 44;
     const bool selected = i == pomodoroIndex;
     const uint16_t bg = selected ? TFT_CYAN : TFT_DARKGREY;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
-    display.fillRoundRect(x, 62, 58, 44, 7, bg);
+    display.fillRoundRect(18, y, w - 36, 34, 7, bg);
     display.setTextDatum(middle_center);
     display.setTextColor(fg, bg);
     display.setTextSize(2);
-    display.drawString(String(kPomodoroMinutes[i]), x + 29, 78);
-    display.setTextSize(1);
-    display.drawString("min", x + 29, 98);
+    display.drawString(String(kPomodoroMinutes[i]) + " min", w / 2, y + 17);
   }
 
-  drawFooter("B: Next", "A: Start");
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString("B: Next  A: Start", w / 2, h - 8);
 }
 
 void drawPomodoroMenu() {
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
+  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
-  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
-  display.drawString("Pomodoro", w / 2, 18);
+  display.drawString("Pomodoro", w / 2, 20);
+
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString(battery.text(), w / 2, 45);
 
   for (int i = 0; i < kPomodoroMenuCount; ++i) {
-    const int y = 62 + i * 38;
+    const int y = 70 + i * 42;
     const bool selected = i == pomodoroMenuIndex;
     const uint16_t bg = selected ? TFT_CYAN : TFT_BLACK;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
-    display.fillRoundRect(18, y, w - 36, 28, 6, bg);
+    display.fillRoundRect(16, y, w - 32, 32, 6, bg);
     display.setTextDatum(middle_center);
     display.setTextColor(fg, bg);
     display.setTextSize(2);
-    display.drawString(kPomodoroMenuItems[i], w / 2, y + 14);
+    display.drawString(kPomodoroMenuItems[i], w / 2, y + 16);
   }
 
-  drawFooter("B: Next", "A: OK");
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString("B: Next  A: OK", w / 2, h - 8);
 }
 
 String recordTimeText(uint32_t epoch) {
@@ -329,24 +347,24 @@ String recordTimeText(uint32_t epoch) {
 }
 
 void drawPomodoroRecords() {
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
+  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
-  drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
-  display.drawString("Records", w / 2, 16);
+  display.drawString("Records", w / 2, 18);
 
   const uint8_t count = pomodoroHistory.count();
   display.setTextSize(1);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   if (count == 0) {
-    display.drawString("No records yet", w / 2, 68);
+    display.drawString("No records yet", w / 2, 82);
   } else {
-    const int pageSize = 3;
+    const int pageSize = 4;
     const int maxPage = (count - 1) / pageSize;
     if (recordPage > maxPage) recordPage = 0;
     for (int i = 0; i < pageSize; ++i) {
@@ -354,26 +372,29 @@ void drawPomodoroRecords() {
       PomodoroRecord record;
       if (!pomodoroHistory.get(idx, record)) break;
 
-      const int y = 48 + i * 30;
+      const int y = 52 + i * 38;
       const uint16_t color = record.completed ? TFT_GREEN : TFT_ORANGE;
       display.setTextDatum(top_left);
       display.setTextColor(color, TFT_BLACK);
-      display.drawString(record.completed ? "DONE" : "STOP", 8, y);
+      display.drawString(record.completed ? "DONE" : "STOP", 10, y);
 
       display.setTextColor(TFT_WHITE, TFT_BLACK);
-      display.drawString(String(record.plannedMinutes) + "m", 48, y);
+      display.drawString(String(record.plannedMinutes) + "m", 10, y + 12);
       display.drawString(String(record.actualSeconds / 60) + "m" +
-                         String(record.actualSeconds % 60) + "s", 86, y);
+                         String(record.actualSeconds % 60) + "s", 50, y + 12);
 
       display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-      display.drawString(recordTimeText(record.startedAt), 8, y + 13);
+      display.drawString(recordTimeText(record.startedAt), 10, y + 24);
     }
     display.setTextDatum(top_right);
     display.setTextColor(TFT_DARKGREY, TFT_BLACK);
     display.drawString(String(recordPage + 1) + "/" + String(maxPage + 1), w - 8, 42);
   }
 
-  drawFooter("B: Page", "A: Back");
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString("B: Page  A: Back", w / 2, h - 8);
 }
 
 void fillLiquidPolygon(int x1, int y1, int x2, int y2, int x3, int y3, int x4, int y4,
@@ -387,58 +408,122 @@ int lerpInt(int a, int b, float t) {
   return a + static_cast<int>((b - a) * t);
 }
 
-void drawLiquidBlob(int cx, int cy, int width, int height, float leanX, float leanY,
-                    uint16_t color) {
-  auto &display = M5.Display;
-  const int halfW = width / 2;
-  const int halfH = height / 2;
-  const int skewX = static_cast<int>(leanX * 14.0f);
-  const int skewY = static_cast<int>(leanY * 8.0f);
-
-  const int x1 = cx - halfW + skewX;
-  const int y1 = cy - halfH - skewY;
-  const int x2 = cx + halfW + skewX;
-  const int y2 = cy - halfH + skewY;
-  const int x3 = cx + halfW - skewX / 2;
-  const int y3 = cy + halfH + skewY;
-  const int x4 = cx - halfW - skewX / 2;
-  const int y4 = cy + halfH - skewY;
-  fillLiquidPolygon(x1, y1, x2, y2, x3, y3, x4, y4, color);
-  display.fillCircle(cx - halfW / 2, cy, max(3, halfH / 2), color);
-  display.fillCircle(cx + halfW / 2, cy, max(3, halfH / 2), color);
+int grainHalfWidth(int y) {
+  if (y < kGrainMid) {
+    return map(y, 0, kGrainMid - 1, 27, 3);
+  }
+  return map(y, kGrainMid, kGrainH - 1, 3, 27);
 }
 
-void drawHourglassLiquid(int centerX, int topY, int bottomY, float progress,
-                         float leanX, float leanY) {
+bool grainInside(int x, int y) {
+  if (x < 0 || x >= kGrainW || y < 0 || y >= kGrainH) return false;
+  return abs(x - kGrainCenter) <= grainHalfWidth(y);
+}
+
+void clearGrains() {
+  memset(grainGrid, 0, sizeof(grainGrid));
+  grainCount = 0;
+  grainCapacity = 0;
+  for (int y = kGrainMid; y < kGrainH; ++y) {
+    for (int x = 0; x < kGrainW; ++x) {
+      if (grainInside(x, y)) ++grainCapacity;
+    }
+  }
+}
+
+void addGrainAtNeck() {
+  for (int attempt = 0; attempt < 12; ++attempt) {
+    const int x = kGrainCenter + random(-3, 4);
+    const int y = kGrainMid + random(0, 3);
+    if (grainInside(x, y) && !grainGrid[y][x]) {
+      grainGrid[y][x] = true;
+      ++grainCount;
+      return;
+    }
+  }
+}
+
+void simulateGrains(float leanX) {
+  const int preferred = leanX >= 0.0f ? 1 : -1;
+  const int other = -preferred;
+
+  for (int y = kGrainH - 2; y >= kGrainMid; --y) {
+    const int xStart = preferred > 0 ? kGrainW - 1 : 0;
+    const int xEnd = preferred > 0 ? -1 : kGrainW;
+    const int xStep = preferred > 0 ? -1 : 1;
+    for (int x = xStart; x != xEnd; x += xStep) {
+      if (!grainGrid[y][x]) continue;
+
+      const int candidates[5][2] = {
+          {0, 1},
+          {preferred, 1},
+          {other, 1},
+          {preferred, 0},
+          {other, 0},
+      };
+
+      for (const auto &candidate : candidates) {
+        const int nx = x + candidate[0];
+        const int ny = y + candidate[1];
+        if (grainInside(nx, ny) && !grainGrid[ny][nx]) {
+          grainGrid[y][x] = false;
+          grainGrid[ny][nx] = true;
+          break;
+        }
+      }
+    }
+  }
+}
+
+void drawTopGrains(float progress, float leanX) {
   auto &display = M5.Display;
   constexpr uint16_t kBlue = 0x04FF;
   constexpr uint16_t kBlueDark = 0x039B;
   constexpr uint16_t kBlueLight = 0x5DFF;
-  const int waistY = (topY + bottomY) / 2;
   const float topLevel = constrain(1.0f - progress, 0.0f, 1.0f);
-  const float bottomLevel = constrain(progress, 0.0f, 1.0f);
+  if (topLevel <= 0.01f) return;
 
-  if (topLevel > 0.02f) {
-    const int cy = lerpInt(waistY - 18, topY + 28, topLevel);
-    const int width = lerpInt(18, 82, topLevel);
-    const int height = lerpInt(10, 38, topLevel);
-    drawLiquidBlob(centerX, cy, width, height, leanX, leanY, kBlue);
-    display.fillCircle(centerX + static_cast<int>(leanX * 18), cy - height / 5, 4, kBlueLight);
+  const int baseSurface = lerpInt(kGrainMid - 1, 2, topLevel);
+  for (int y = 0; y < kGrainMid; ++y) {
+    const int half = grainHalfWidth(y);
+    const int slant = static_cast<int>((kGrainCenter - (kGrainW / 2)) * 0);
+    for (int x = kGrainCenter - half; x <= kGrainCenter + half; ++x) {
+      const int surface = baseSurface + static_cast<int>((x - kGrainCenter) * leanX * 0.20f);
+      if (y < surface) continue;
+      if (((x + y + millis() / 180) % 5) == 0 && y < surface + 3) continue;
+      const int px = kGrainX0 + x * kGrainCell;
+      const int py = kGrainY0 + y * kGrainCell;
+      display.fillRect(px, py, kGrainCell, kGrainCell,
+                       ((x + y) % 7 == 0) ? kBlueLight : kBlue);
+    }
   }
+}
 
-  if (bottomLevel > 0.01f) {
-    const int cy = lerpInt(bottomY - 24, waistY + 20, 1.0f - bottomLevel);
-    const int width = lerpInt(22, 88, bottomLevel);
-    const int height = lerpInt(10, 42, bottomLevel);
-    drawLiquidBlob(centerX, cy, width, height, leanX, leanY, kBlueDark);
-    display.fillCircle(centerX + static_cast<int>(leanX * 20), cy - height / 5, 4, kBlue);
+void drawBottomGrains() {
+  auto &display = M5.Display;
+  constexpr uint16_t kBlue = 0x04FF;
+  constexpr uint16_t kBlueDark = 0x039B;
+  for (int y = kGrainMid; y < kGrainH; ++y) {
+    for (int x = 0; x < kGrainW; ++x) {
+      if (!grainGrid[y][x]) continue;
+      const int px = kGrainX0 + x * kGrainCell;
+      const int py = kGrainY0 + y * kGrainCell;
+      display.fillRect(px, py, kGrainCell, kGrainCell,
+                       ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+    }
   }
+}
 
+void drawFallingStream(int centerX, float progress, float leanX) {
+  auto &display = M5.Display;
+  constexpr uint16_t kBlueLight = 0x5DFF;
+  const int waistY = kGrainY0 + kGrainMid * kGrainCell;
   if (progress > 0.01f && progress < 0.99f) {
-    const int drip = 12 + static_cast<int>(sin(millis() * 0.020f) * 5.0f);
+    const int drip = 18 + static_cast<int>(sin(millis() * 0.020f) * 5.0f);
     const int drift = static_cast<int>(leanX * 10.0f);
-    display.fillRoundRect(centerX - 2 + drift, waistY - 7, 4, drip, 2, kBlueLight);
-    display.fillCircle(centerX + drift / 2, waistY + 13 + (millis() / 80) % 12, 2, kBlueLight);
+    for (int i = 0; i < drip; i += 5) {
+      display.fillCircle(centerX + drift + (i % 2), waistY - 6 + i, 2, kBlueLight);
+    }
   }
 }
 
@@ -569,7 +654,13 @@ void drawPomodoroRun(bool force = false) {
   display.drawString(remainText, centerX, 6);
 
   display.fillRect(6, kHourglassTopY - 10, w - 12, kHourglassBottomY - kHourglassTopY + 24, TFT_BLACK);
-  drawHourglassLiquid(centerX, kHourglassTopY, kHourglassBottomY, progress, liquidLeanX, liquidLeanY);
+  const int targetGrains = static_cast<int>(grainCapacity * progress);
+  int grainsToAdd = min(8, max(0, targetGrains - grainCount));
+  while (grainsToAdd-- > 0) addGrainAtNeck();
+  simulateGrains(liquidLeanX);
+  drawTopGrains(progress, liquidLeanX);
+  drawFallingStream(centerX, progress, liquidLeanX);
+  drawBottomGrains();
   drawHourglassFrame(centerX, kHourglassTopY, kHourglassBottomY);
 }
 
@@ -722,6 +813,7 @@ void startPomodoro() {
   lastPomodoroDrawMs = 0;
   liquidLeanX = 0.0f;
   liquidLeanY = 0.0f;
+  clearGrains();
   pomodoroInverted = false;
   pomodoroActive = true;
   pomodoroFinishedRecorded = false;
@@ -799,16 +891,18 @@ void loop() {
         if (pomodoroMenuIndex == 0) {
           screen = Screen::PomodoroSelect;
           drawPomodoroSelect();
-        } else {
+        } else if (pomodoroMenuIndex == 1) {
           recordPage = 0;
           screen = Screen::PomodoroRecords;
           drawPomodoroRecords();
+        } else {
+          returnToMenu();
         }
       }
     } else if (screen == Screen::PomodoroRecords) {
       if (M5.BtnB.wasPressed()) {
         const uint8_t count = pomodoroHistory.count();
-        if (count > 0) recordPage = (recordPage + 1) % ((count - 1) / 3 + 1);
+        if (count > 0) recordPage = (recordPage + 1) % ((count - 1) / 4 + 1);
         drawPomodoroRecords();
       }
       if (M5.BtnA.wasPressed()) {
