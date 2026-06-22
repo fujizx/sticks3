@@ -14,6 +14,7 @@ constexpr uint32_t kRollCooldownMs = 650;
 constexpr uint32_t kClockRefreshMs = 1000;
 constexpr uint32_t kUiFrameDelayMs = 20;
 constexpr uint32_t kPomodoroFrameMs = 60;
+constexpr uint32_t kSeaFrameMs = 45;
 constexpr uint8_t kDisplayBrightness = 90;
 constexpr uint8_t kPomodoroDoneVolume = 28;
 constexpr float kShakeThreshold = 1.6f;
@@ -43,12 +44,14 @@ enum class Screen {
   PomodoroRun,
   PomodoroPrompt,
   Dice,
+  Sea,
 };
 
 constexpr const char *kMenuItems[] = {
     "Clock",
     "Pomodoro",
     "Dice",
+    "Sea",
 };
 constexpr int kMenuCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
 constexpr uint16_t kPomodoroMinutes[] = {15, 25, 50};
@@ -66,6 +69,7 @@ int recordPage = 0;
 uint32_t lastRollMs = 0;
 uint32_t lastClockDrawMs = 0;
 uint32_t lastPomodoroDrawMs = 0;
+uint32_t lastSeaDrawMs = 0;
 uint32_t pomodoroStartMs = 0;
 uint32_t pomodoroDurationMs = 25UL * 60UL * 1000UL;
 uint32_t bootMs = 0;
@@ -80,6 +84,12 @@ float pomodoroBaseAy = 1.0f;
 float pomodoroBaseAz = 0.0f;
 float liquidLeanX = 0.0f;
 float liquidLeanY = 0.0f;
+bool seaGravityReady = false;
+float seaBaseAx = 0.0f;
+float seaBaseAy = 1.0f;
+float seaBaseAz = 0.0f;
+float seaLeanX = 0.0f;
+float seaWavePhase = 0.0f;
 bool grainGrid[kGrainH][kGrainW] = {};
 int grainCount = 0;
 int grainCapacity = 0;
@@ -99,9 +109,38 @@ HttpClient httpClient;
 WsClient wsClient;
 PomodoroHistory pomodoroHistory;
 M5Canvas hourglassCanvas(&M5.Display);
+M5Canvas seaCanvas(&M5.Display);
 
 void drawPomodoroPrompt();
 void returnToMenu();
+
+bool bottleInside(int x, int y) {
+  constexpr int left = 15;
+  constexpr int right = 119;
+  constexpr int top = 27;
+  constexpr int bottom = 224;
+  constexpr int radius = 14;
+  if (x < left || x > right || y < top || y > bottom) return false;
+
+  if (y < top + radius) {
+    const int dy = top + radius - y;
+    const int dx = radius - static_cast<int>(sqrtf(radius * radius - dy * dy));
+    return x >= left + dx && x <= right - dx;
+  }
+  if (y > bottom - radius) {
+    const int dy = y - (bottom - radius);
+    const int dx = radius - static_cast<int>(sqrtf(radius * radius - dy * dy));
+    return x >= left + dx && x <= right - dx;
+  }
+  return true;
+}
+
+template <typename Gfx>
+void drawBottleFrame(Gfx &gfx) {
+  constexpr uint16_t kGlass = 0xBDF7;
+  gfx.drawRoundRect(13, 25, 109, 202, 16, kGlass);
+  gfx.drawRoundRect(14, 26, 107, 200, 15, 0x5AEB);
+}
 
 void drawFooter(const char *left, const char *right) {
   auto &display = M5.Display;
@@ -857,6 +896,99 @@ void drawPomodoroPrompt() {
   display.drawString("B: Next  A: OK", w / 2, h - 8);
 }
 
+void calibrateSeaGravity() {
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  float sumAx = 0.0f;
+  float sumAy = 0.0f;
+  float sumAz = 0.0f;
+  int samples = 0;
+  seaGravityReady = false;
+  delay(80);
+  for (int i = 0; i < 18; ++i) {
+    if (readAccel(ax, ay, az)) {
+      sumAx += ax;
+      sumAy += ay;
+      sumAz += az;
+      ++samples;
+    }
+    delay(8);
+  }
+  if (samples > 0) {
+    seaBaseAx = sumAx / samples;
+    seaBaseAy = sumAy / samples;
+    seaBaseAz = sumAz / samples;
+    seaGravityReady = true;
+  }
+  seaLeanX = 0.0f;
+  seaWavePhase = 0.0f;
+  LOGI("sea", "gravity base ready=%d ax=%.2f ay=%.2f az=%.2f",
+       seaGravityReady ? 1 : 0, seaBaseAx, seaBaseAy, seaBaseAz);
+}
+
+void drawSea(bool force = false) {
+  const uint32_t now = millis();
+  if (!force && now - lastSeaDrawMs < kSeaFrameMs) return;
+  lastSeaDrawMs = now;
+
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  if (readAccel(ax, ay, az)) {
+    const float rawLeanX = applyLeanDeadzone(constrain((ax - seaBaseAx) * 1.45f,
+                                                       -1.0f, 1.0f));
+    seaLeanX = seaLeanX * 0.72f + rawLeanX * 0.28f;
+  }
+  seaWavePhase += 0.16f + fabsf(seaLeanX) * 0.05f;
+
+  M5.Display.setRotation(0);
+  if (!seaCanvas.width()) {
+    seaCanvas.setColorDepth(16);
+    seaCanvas.createSprite(M5.Display.width(), M5.Display.height());
+  }
+
+  constexpr uint16_t kWater = 0x04FF;
+  constexpr uint16_t kWaterDark = 0x0257;
+  constexpr uint16_t kWaterLight = 0x5DFF;
+  seaCanvas.fillScreen(TFT_BLACK);
+
+  for (int x = 0; x < seaCanvas.width(); ++x) {
+    const float wave = sinf(seaWavePhase + x * 0.115f) * 2.2f;
+    const int surfaceY = 132 + static_cast<int>((x - seaCanvas.width() / 2) *
+                                                seaLeanX * 0.78f + wave);
+    for (int y = 25; y <= 226; ++y) {
+      if (!bottleInside(x, y)) continue;
+      if (y >= surfaceY) {
+        const uint16_t color = ((x * 5 + y + static_cast<int>(seaWavePhase * 8)) % 17 == 0)
+                                   ? kWater
+                                   : kWaterDark;
+        seaCanvas.drawPixel(x, y, color);
+      } else if (abs(y - surfaceY) <= 1) {
+        seaCanvas.drawPixel(x, y, kWaterLight);
+      }
+    }
+  }
+
+  drawBottleFrame(seaCanvas);
+  seaCanvas.setTextDatum(top_center);
+  seaCanvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  seaCanvas.setTextSize(1);
+  seaCanvas.drawString("A: Calibrate", seaCanvas.width() / 2, 5);
+  seaCanvas.setTextDatum(bottom_center);
+  seaCanvas.drawString("B: Menu", seaCanvas.width() / 2, seaCanvas.height() - 4);
+  seaCanvas.pushSprite(0, 0);
+}
+
+void enterSea() {
+  screen = Screen::Sea;
+  lastSeaDrawMs = 0;
+  M5.Display.setRotation(0);
+  M5.Display.fillScreen(TFT_BLACK);
+  calibrateSeaGravity();
+  drawSea(true);
+}
+
 void savePomodoroStopped() {
   if (!pomodoroActive || pomodoroFinishedRecorded) return;
 
@@ -954,8 +1086,13 @@ void enterSelectedApp() {
     return;
   }
 
-  screen = Screen::Dice;
-  drawDieFace(dieValue);
+  if (menuIndex == 2) {
+    screen = Screen::Dice;
+    drawDieFace(dieValue);
+    return;
+  }
+
+  enterSea();
 }
 
 void returnToMenu() {
@@ -1100,6 +1237,13 @@ void loop() {
       drawClock();
     } else if (screen == Screen::PomodoroRun) {
       drawPomodoroRun();
+    } else if (screen == Screen::Sea) {
+      if (M5.BtnA.wasPressed()) {
+        calibrateSeaGravity();
+        drawSea(true);
+      } else {
+        drawSea();
+      }
     }
   }
 
