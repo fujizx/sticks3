@@ -26,17 +26,17 @@ constexpr int kHourglassTopY = 24;
 constexpr int kHourglassBottomY = 232;
 constexpr int kGrainCell = 2;
 constexpr int kGrainW = 63;
-constexpr int kGrainH = 98;
+constexpr int kGrainH = 104;
 constexpr int kGrainMid = kGrainH / 2;
 constexpr int kGrainX0 = 4;
-constexpr int kGrainY0 = 30;
+constexpr int kGrainY0 = 24;
 constexpr int kGrainCenter = kGrainW / 2;
 constexpr int kHourglassSpriteX = 0;
 constexpr int kHourglassSpriteY = 18;
 constexpr int kHourglassSpriteW = 135;
 constexpr int kHourglassSpriteH = 222;
 constexpr int kFallingGrainCount = 24;
-constexpr int kMaxBottomGrains = 1600;
+constexpr int kMaxBottomGrains = 1700;
 
 enum class Screen {
   Menu,
