@@ -87,12 +87,13 @@ float pomodoroBaseAx = 0.0f;
 float pomodoroBaseAy = 1.0f;
 float pomodoroBaseAz = 0.0f;
 float liquidLeanX = 0.0f;
-float liquidLeanY = 0.0f;
+float liquidLeanY = 1.0f;
 bool seaGravityReady = false;
 float seaBaseAx = 0.0f;
 float seaBaseAy = 1.0f;
 float seaBaseAz = 0.0f;
-float seaLeanX = 0.0f;
+float seaGravityX = 0.0f;
+float seaGravityY = 1.0f;
 float seaWavePhase = 0.0f;
 bool grainGrid[kGrainH][kGrainW] = {};
 int grainCount = 0;
@@ -113,6 +114,7 @@ struct BottomGrain {
 FallingGrain fallingGrains[kFallingGrainCount];
 BottomGrain bottomGrains[kMaxBottomGrains];
 String lastClockText;
+int lastClockRotation = -1;
 AppConfig appConfig;
 WifiPortal wifiPortal;
 TimeSync timeSync;
@@ -374,8 +376,8 @@ void animateFlipCard(int x, int y, int width, int height, const String &fromValu
   }
 }
 
-void drawClockChrome(const String &subtitle) {
-  M5.Display.setRotation(1);
+void drawClockChrome(const String &subtitle, int rotation) {
+  M5.Display.setRotation(rotation);
   auto &display = M5.Display;
   const int w = display.width();
 
@@ -385,6 +387,46 @@ void drawClockChrome(const String &subtitle) {
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextSize(1);
   display.drawString(subtitle, w / 2, 18);
+  drawFooter("B: Menu", "");
+}
+
+int clockRotationFromImu() {
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  if (!readAccel(ax, ay, az)) return lastClockRotation >= 0 ? lastClockRotation : 0;
+
+  if (fabsf(ax) >= fabsf(ay)) {
+    return ax < 0.0f ? 0 : 2;
+  }
+  return ay > 0.0f ? 3 : 1;
+}
+
+void drawPortraitClock(const String &subtitle, const char *hhText, const char *mmText,
+                       const char *ssText, int rotation) {
+  M5.Display.setRotation(rotation);
+  auto &display = M5.Display;
+  const int w = display.width();
+  const int h = display.height();
+
+  display.fillScreen(TFT_BLACK);
+  drawStatusBar();
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString(subtitle, w / 2, 17);
+
+  display.setTextDatum(middle_center);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(5);
+  display.drawString(hhText, w / 2, 61);
+  display.drawString(mmText, w / 2, 123);
+  display.drawString(ssText, w / 2, 185);
+
+  display.setTextSize(1);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString(":", w / 2, 92);
+  display.drawString(":", w / 2, 154);
   drawFooter("B: Menu", "");
 }
 
@@ -650,12 +692,12 @@ bool addBottomGrainAt(float spriteX, float spriteY) {
   return false;
 }
 
-void updateFallingGrains(float leanX) {
+void updateFallingGrains(float gravityX, float gravityY) {
   const int bottomY = kHourglassBottomY - kHourglassSpriteY;
   for (auto &grain : fallingGrains) {
     if (!grain.active) continue;
-    grain.y += grain.speed;
-    grain.x += leanX * 1.8f;
+    grain.y += grain.speed * max(0.12f, gravityY);
+    grain.x += gravityX * grain.speed * 0.75f;
     if (grain.y >= bottomY - 8 ||
         !hourglassInsideSprite(static_cast<int>(grain.x), static_cast<int>(grain.y), 2)) {
       addBottomGrainAt(grain.x, grain.y);
@@ -664,10 +706,13 @@ void updateFallingGrains(float leanX) {
   }
 }
 
-void simulateGrains(float leanX) {
+void simulateGrains(float gravityX, float gravityY) {
   rebuildBottomGrid();
-  const int preferred = leanX >= 0.0f ? 1 : -1;
+  const int preferred = gravityX >= 0.0f ? 1 : -1;
   const int other = -preferred;
+  const float tilt = constrain(fabsf(gravityX), 0.0f, 1.0f);
+  const float down = constrain(gravityY, 0.03f, 1.0f);
+  const bool strongTilt = tilt > 0.55f;
 
   for (auto &grain : bottomGrains) {
     if (!grain.active) continue;
@@ -676,20 +721,20 @@ void simulateGrains(float leanX) {
     int oldY = constrain(static_cast<int>(roundf(grain.y)), kGrainMid, kGrainH - 1);
     if (grainInside(oldX, oldY)) grainGrid[oldY][oldX] = false;
 
-    grain.vx = constrain(grain.vx + leanX * 0.22f, -1.8f, 1.8f);
-    grain.vy = constrain(grain.vy + 0.28f, -0.8f, 2.2f);
+    grain.vx = constrain(grain.vx + gravityX * 0.36f, -2.4f, 2.4f);
+    grain.vy = constrain(grain.vy + down * 0.30f, -0.8f, 2.2f);
 
     const int targetX = static_cast<int>(roundf(grain.x + grain.vx));
     const int targetY = static_cast<int>(roundf(grain.y + grain.vy));
-    const int sideStep = fabsf(leanX) > 0.08f ? preferred : (random(0, 2) == 0 ? -1 : 1);
+    const int sideStep = fabsf(gravityX) > 0.08f ? preferred : (random(0, 2) == 0 ? -1 : 1);
 
     const int candidates[8][2] = {
         {targetX, targetY},
-        {oldX, oldY + 1},
+        {oldX + (strongTilt ? preferred : 0), oldY + (strongTilt ? 0 : 1)},
         {oldX + sideStep, oldY + 1},
-        {oldX + other, oldY + 1},
-        {oldX + sideStep, oldY},
-        {oldX + preferred, oldY + 2},
+        {oldX + preferred, oldY},
+        {oldX + preferred, oldY + 1},
+        {oldX, oldY + 1},
         {oldX, oldY},
         {oldX + other, oldY},
     };
@@ -858,10 +903,9 @@ void drawPomodoroRun(bool force = false) {
   if (readAccel(ax, ay, az)) {
     const float rawLeanX = applyLeanDeadzone(constrain((pomodoroBaseAy - ay) * 1.8f,
                                                        -1.0f, 1.0f));
-    const float rawLeanY = applyLeanDeadzone(constrain((az - pomodoroBaseAz) * 1.4f,
-                                                       -1.0f, 1.0f));
+    const float rawGravityY = constrain(-ax, 0.0f, 1.0f);
     liquidLeanX = liquidLeanX * 0.58f + rawLeanX * 0.42f;
-    liquidLeanY = liquidLeanY * 0.66f + rawLeanY * 0.34f;
+    liquidLeanY = liquidLeanY * 0.66f + rawGravityY * 0.34f;
     bool inverted = false;
     if (pomodoroGravityReady) {
       const float baseMag = sqrtf(pomodoroBaseAx * pomodoroBaseAx +
@@ -922,8 +966,8 @@ void drawPomodoroRun(bool force = false) {
   display.setTextSize(1);
   display.drawString(remainText, centerX, 6);
 
-  updateFallingGrains(liquidLeanX);
-  simulateGrains(liquidLeanX);
+  updateFallingGrains(liquidLeanX, liquidLeanY);
+  simulateGrains(liquidLeanX, liquidLeanY);
   int targetTransferred = static_cast<int>(grainCapacity * progress);
   if (elapsed > 0 && progress < 1.0f) {
     targetTransferred = max(1, targetTransferred);
@@ -1008,7 +1052,8 @@ void calibrateSeaGravity() {
     seaBaseAz = sumAz / samples;
     seaGravityReady = true;
   }
-  seaLeanX = 0.0f;
+  seaGravityX = 0.0f;
+  seaGravityY = 1.0f;
   seaWavePhase = 0.0f;
   LOGI("sea", "gravity base ready=%d ax=%.2f ay=%.2f az=%.2f",
        seaGravityReady ? 1 : 0, seaBaseAx, seaBaseAy, seaBaseAz);
@@ -1025,9 +1070,11 @@ void drawSea(bool force = false) {
   if (readAccel(ax, ay, az)) {
     const float rawLeanX = applyLeanDeadzone(constrain((seaBaseAy - ay) * 1.45f,
                                                        -1.0f, 1.0f));
-    seaLeanX = seaLeanX * 0.72f + rawLeanX * 0.28f;
+    const float rawGravityY = constrain(-ax, 0.0f, 1.0f);
+    seaGravityX = seaGravityX * 0.72f + rawLeanX * 0.28f;
+    seaGravityY = seaGravityY * 0.72f + rawGravityY * 0.28f;
   }
-  seaWavePhase += 0.16f + fabsf(seaLeanX) * 0.05f;
+  seaWavePhase += 0.16f + fabsf(seaGravityX) * 0.05f;
 
   M5.Display.setRotation(0);
   if (!seaCanvas.width()) {
@@ -1040,18 +1087,20 @@ void drawSea(bool force = false) {
   constexpr uint16_t kWaterLight = 0x5DFF;
   seaCanvas.fillScreen(TFT_BLACK);
 
+  const int centerX = seaCanvas.width() / 2;
+  const int centerY = 132;
   for (int x = 0; x < seaCanvas.width(); ++x) {
     const float wave = sinf(seaWavePhase + x * 0.115f) * 2.2f;
-    const int surfaceY = 132 + static_cast<int>((x - seaCanvas.width() / 2) *
-                                                seaLeanX * 0.78f + wave);
     for (int y = 25; y <= 226; ++y) {
       if (!bottleInside(x, y)) continue;
-      if (y >= surfaceY) {
+      const float side = seaGravityX * (x - centerX) +
+                         seaGravityY * (y - centerY) + wave;
+      if (side >= 0.0f) {
         const uint16_t color = ((x * 5 + y + static_cast<int>(seaWavePhase * 8)) % 17 == 0)
                                    ? kWater
                                    : kWaterDark;
         seaCanvas.drawPixel(x, y, color);
-      } else if (abs(y - surfaceY) <= 1) {
+      } else if (fabsf(side) <= 1.8f) {
         seaCanvas.drawPixel(x, y, kWaterLight);
       }
     }
@@ -1184,6 +1233,13 @@ void drawClock(bool force = false) {
   const uint32_t now = millis();
   if (!force && now - lastClockDrawMs < kClockRefreshMs) return;
   lastClockDrawMs = now;
+  const int rotation = clockRotationFromImu();
+  const bool portrait = rotation == 0 || rotation == 2;
+  const bool rotationChanged = rotation != lastClockRotation;
+  if (rotationChanged) {
+    force = true;
+    lastClockRotation = rotation;
+  }
 
   char hhText[3];
   char mmText[3];
@@ -1210,10 +1266,15 @@ void drawClock(bool force = false) {
   if (!force && clockText == lastClockText) return;
 
   const String oldClockText = lastClockText;
-  const bool canAnimate = !force && oldClockText.length() == 8;
+  const bool canAnimate = !force && !portrait && oldClockText.length() == 8;
   lastClockText = clockText;
 
-  drawClockChrome(subtitle);
+  if (portrait) {
+    drawPortraitClock(subtitle, hhText, mmText, ssText, rotation);
+    return;
+  }
+
+  drawClockChrome(subtitle, rotation);
 
   if (!canAnimate) {
     drawFlipCard(4, 43, 74, 72, hhText);
@@ -1249,6 +1310,7 @@ void enterSelectedApp() {
   if (menuIndex == 0) {
     screen = Screen::Clock;
     lastClockText = "";
+    lastClockRotation = -1;
     drawClock(true);
     return;
   }
@@ -1288,7 +1350,7 @@ void startPomodoro() {
   pomodoroStartMs = millis();
   lastPomodoroDrawMs = 0;
   liquidLeanX = 0.0f;
-  liquidLeanY = 0.0f;
+  liquidLeanY = 1.0f;
   clearGrains();
   pomodoroInverted = false;
   pomodoroActive = true;
