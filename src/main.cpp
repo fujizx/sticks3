@@ -18,19 +18,19 @@ constexpr uint8_t kDisplayBrightness = 90;
 constexpr uint8_t kPomodoroDoneVolume = 28;
 constexpr float kShakeThreshold = 1.6f;
 constexpr float kInvertThreshold = -0.70f;
-constexpr int kHourglassTopY = 30;
-constexpr int kHourglassBottomY = 226;
+constexpr int kHourglassTopY = 24;
+constexpr int kHourglassBottomY = 232;
 constexpr int kGrainCell = 2;
-constexpr int kGrainW = 57;
-constexpr int kGrainH = 88;
+constexpr int kGrainW = 63;
+constexpr int kGrainH = 98;
 constexpr int kGrainMid = kGrainH / 2;
-constexpr int kGrainX0 = 10;
-constexpr int kGrainY0 = 36;
+constexpr int kGrainX0 = 4;
+constexpr int kGrainY0 = 30;
 constexpr int kGrainCenter = kGrainW / 2;
-constexpr int kHourglassSpriteX = 6;
-constexpr int kHourglassSpriteY = 20;
-constexpr int kHourglassSpriteW = 124;
-constexpr int kHourglassSpriteH = 218;
+constexpr int kHourglassSpriteX = 0;
+constexpr int kHourglassSpriteY = 18;
+constexpr int kHourglassSpriteW = 135;
+constexpr int kHourglassSpriteH = 222;
 
 enum class Screen {
   Menu,
@@ -108,50 +108,77 @@ void drawFooter(const char *left, const char *right) {
   display.drawString(right, w - 6, h - 4);
 }
 
+void drawWifiIcon(int x, int y, bool connected) {
+  auto &display = M5.Display;
+  const uint16_t color = connected ? TFT_CYAN : TFT_DARKGREY;
+  display.fillRect(x - 1, y - 1, 19, 16, TFT_BLACK);
+  display.drawArc(x + 8, y + 13, 12, 10, 220, 320, color);
+  display.drawArc(x + 8, y + 13, 8, 6, 225, 315, color);
+  display.fillCircle(x + 8, y + 12, 2, color);
+  if (!connected) {
+    display.drawLine(x + 2, y + 2, x + 15, y + 14, TFT_RED);
+  }
+}
+
+void drawTopStatus() {
+  auto &display = M5.Display;
+  const int w = display.width();
+  battery.loop();
+  display.fillRect(0, 0, w, 17, TFT_BLACK);
+  drawWifiIcon(5, 1, wifiPortal.connected());
+  display.setTextDatum(top_right);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString(battery.text(), w - 5, 3);
+}
+
 void drawStatusBar() {
   auto &display = M5.Display;
   const int w = display.width();
 
   battery.loop();
   display.fillRect(0, 0, w, 13, TFT_BLACK);
-  display.setTextSize(1);
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.setTextDatum(top_left);
-  display.drawString(wifiPortal.connected() ? "WiFi" : "Offline", 4, 2);
+  drawWifiIcon(4, 0, wifiPortal.connected());
   display.setTextDatum(top_right);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
   display.drawString(battery.text(), w - 4, 2);
 }
 
 void drawMenu() {
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
+  const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
-  drawStatusBar();
+  drawTopStatus();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
-  display.drawString("STICK S3", w / 2, 16);
+  display.drawString("STICK S3", w / 2, 22);
 
   display.setTextSize(1);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString("Menu", w / 2, 42);
+  display.drawString("Menu", w / 2, 48);
 
   for (int i = 0; i < kMenuCount; ++i) {
-    const int y = 58 + i * 30;
+    const int y = 74 + i * 42;
     const bool selected = i == menuIndex;
-    const uint16_t bg = selected ? TFT_WHITE : TFT_BLACK;
+    const uint16_t bg = selected ? TFT_CYAN : TFT_BLACK;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
 
-    display.fillRoundRect(18, y, w - 36, 24, 6, bg);
+    display.fillRoundRect(16, y, w - 32, 32, 6, bg);
     display.setTextDatum(middle_center);
     display.setTextColor(fg, bg);
-    display.setTextSize(1);
-    display.drawString(kMenuItems[i], w / 2, y + 12);
+    display.setTextSize(2);
+    display.drawString(kMenuItems[i], w / 2, y + 16);
   }
 
-  drawFooter("B: Next", "A: OK");
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString("B: Next  A: OK", w / 2, h - 8);
 }
 
 bool readAccel(float &ax, float &ay, float &az) {
@@ -314,17 +341,14 @@ void drawPomodoroMenu() {
   const int h = display.height();
 
   display.fillScreen(TFT_BLACK);
+  drawTopStatus();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
   display.drawString("Pomodoro", w / 2, 20);
 
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.setTextSize(1);
-  display.drawString(battery.text(), w / 2, 45);
-
   for (int i = 0; i < kPomodoroMenuCount; ++i) {
-    const int y = 70 + i * 42;
+    const int y = 74 + i * 42;
     const bool selected = i == pomodoroMenuIndex;
     const uint16_t bg = selected ? TFT_CYAN : TFT_BLACK;
     const uint16_t fg = selected ? TFT_BLACK : TFT_WHITE;
@@ -415,9 +439,9 @@ int lerpInt(int a, int b, float t) {
 
 int grainHalfWidth(int y) {
   if (y < kGrainMid) {
-    return map(y, 0, kGrainMid - 1, 23, 2);
+    return map(y, 0, kGrainMid - 1, 29, 2);
   }
-  return map(y, kGrainMid, kGrainH - 1, 2, 23);
+  return map(y, kGrainMid, kGrainH - 1, 2, 29);
 }
 
 bool grainInside(int x, int y) {
@@ -436,9 +460,10 @@ void clearGrains() {
   }
 }
 
-void addGrainAtNeck() {
+void addGrainAtNeck(float leanX) {
+  const int leanOffset = static_cast<int>(leanX * 7.0f);
   for (int attempt = 0; attempt < 12; ++attempt) {
-    const int x = kGrainCenter + random(-3, 4);
+    const int x = kGrainCenter + leanOffset + random(-3, 4);
     const int y = kGrainMid + random(0, 3);
     if (grainInside(x, y) && !grainGrid[y][x]) {
       grainGrid[y][x] = true;
@@ -451,6 +476,7 @@ void addGrainAtNeck() {
 void simulateGrains(float leanX) {
   const int preferred = leanX >= 0.0f ? 1 : -1;
   const int other = -preferred;
+  const int gravityBias = constrain(static_cast<int>(fabsf(leanX) * 100.0f), 0, 100);
 
   for (int y = kGrainH - 2; y >= kGrainMid; --y) {
     const int xStart = preferred > 0 ? kGrainW - 1 : 0;
@@ -459,11 +485,14 @@ void simulateGrains(float leanX) {
     for (int x = xStart; x != xEnd; x += xStep) {
       if (!grainGrid[y][x]) continue;
 
-      const int candidates[5][2] = {
-          {0, 1},
+      const bool strongTilt = gravityBias > 18;
+      const int candidates[7][2] = {
+          {strongTilt ? preferred : 0, 1},
           {preferred, 1},
-          {other, 1},
+          {0, 1},
           {preferred, 0},
+          {preferred, 0},
+          {other, 1},
           {other, 0},
       };
 
@@ -492,7 +521,7 @@ void drawTopGrains(Gfx &gfx, float progress, float leanX) {
     const int half = grainHalfWidth(y);
     const int slant = static_cast<int>((kGrainCenter - (kGrainW / 2)) * 0);
     for (int x = kGrainCenter - half; x <= kGrainCenter + half; ++x) {
-      const int surface = baseSurface + static_cast<int>((x - kGrainCenter) * leanX * 0.20f);
+      const int surface = baseSurface + static_cast<int>((x - kGrainCenter) * leanX * 0.55f);
       if (y < surface) continue;
       if (((x + y + millis() / 180) % 5) == 0 && y < surface + 3) continue;
       const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
@@ -524,7 +553,7 @@ void drawFallingStream(Gfx &gfx, int centerX, float progress, float leanX) {
   const int waistY = kGrainY0 + kGrainMid * kGrainCell - kHourglassSpriteY;
   if (progress > 0.01f && progress < 0.99f) {
     const int drip = 18 + static_cast<int>(sin(millis() * 0.020f) * 5.0f);
-    const int drift = static_cast<int>(leanX * 10.0f);
+    const int drift = static_cast<int>(leanX * 24.0f);
     for (int i = 0; i < drip; i += 5) {
       gfx.fillCircle(centerX + drift + (i % 2), waistY - 6 + i, 2, kBlueLight);
     }
@@ -535,20 +564,17 @@ template <typename Gfx>
 void drawHourglassFrame(Gfx &gfx, int centerX, int topY, int bottomY) {
   constexpr uint16_t kGlass = 0xBDF7;
   const int waistY = (topY + bottomY) / 2;
-  const int topLeft = centerX - 50;
-  const int topRight = centerX + 50;
-  const int waistLeft = centerX - 10;
-  const int waistRight = centerX + 10;
-  const int bottomLeft = centerX - 50;
-  const int bottomRight = centerX + 50;
+  const int topLeft = centerX - 62;
+  const int topRight = centerX + 62;
+  const int waistLeft = centerX - 5;
+  const int waistRight = centerX + 5;
+  const int bottomLeft = centerX - 62;
+  const int bottomRight = centerX + 62;
 
   gfx.drawLine(topLeft, topY, waistLeft, waistY, kGlass);
   gfx.drawLine(topRight, topY, waistRight, waistY, kGlass);
   gfx.drawLine(waistLeft, waistY, bottomLeft, bottomY, kGlass);
   gfx.drawLine(waistRight, waistY, bottomRight, bottomY, kGlass);
-  gfx.drawRoundRect(topLeft - 4, topY - 8, topRight - topLeft + 8, 10, 4, TFT_WHITE);
-  gfx.drawRoundRect(bottomLeft - 4, bottomY - 2, bottomRight - bottomLeft + 8, 10, 4, TFT_WHITE);
-  gfx.drawCircle(centerX, waistY, 4, kGlass);
 }
 
 void drawPomodoroStaticRun() {
@@ -601,10 +627,10 @@ void drawPomodoroRun(bool force = false) {
   float ay = 0.0f;
   float az = 0.0f;
   if (readAccel(ax, ay, az)) {
-    const float rawLeanX = constrain(ax - pomodoroBaseAx, -1.0f, 1.0f);
-    const float rawLeanY = constrain(az - pomodoroBaseAz, -1.0f, 1.0f);
-    liquidLeanX = liquidLeanX * 0.72f + rawLeanX * 0.28f;
-    liquidLeanY = liquidLeanY * 0.76f + rawLeanY * 0.24f;
+    const float rawLeanX = constrain((ax - pomodoroBaseAx) * 1.8f, -1.0f, 1.0f);
+    const float rawLeanY = constrain((az - pomodoroBaseAz) * 1.4f, -1.0f, 1.0f);
+    liquidLeanX = liquidLeanX * 0.58f + rawLeanX * 0.42f;
+    liquidLeanY = liquidLeanY * 0.66f + rawLeanY * 0.34f;
     bool inverted = false;
     if (pomodoroGravityReady) {
       const float baseMag = sqrtf(pomodoroBaseAx * pomodoroBaseAx +
@@ -667,7 +693,7 @@ void drawPomodoroRun(bool force = false) {
 
   const int targetGrains = static_cast<int>(grainCapacity * progress);
   int grainsToAdd = min(8, max(0, targetGrains - grainCount));
-  while (grainsToAdd-- > 0) addGrainAtNeck();
+  while (grainsToAdd-- > 0) addGrainAtNeck(liquidLeanX);
   simulateGrains(liquidLeanX);
 
   if (!hourglassCanvas.width()) {
@@ -822,7 +848,7 @@ void returnToMenu() {
   if (screen == Screen::PomodoroRun || screen == Screen::PomodoroPrompt) {
     savePomodoroStopped();
   }
-  M5.Display.setRotation(1);
+  M5.Display.setRotation(0);
   screen = Screen::Menu;
   drawMenu();
 }
