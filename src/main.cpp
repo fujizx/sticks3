@@ -46,6 +46,7 @@ enum class Screen {
   PomodoroPrompt,
   Dice,
   Sea,
+  ImuCal,
 };
 
 constexpr const char *kMenuItems[] = {
@@ -53,6 +54,7 @@ constexpr const char *kMenuItems[] = {
     "Pomodoro",
     "Dice",
     "Sea",
+    "IMU Cal",
 };
 constexpr int kMenuCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
 constexpr uint16_t kPomodoroMinutes[] = {15, 25, 50};
@@ -67,6 +69,7 @@ int pomodoroMenuIndex = 0;
 int pomodoroIndex = 1;
 int promptIndex = 0;
 int recordPage = 0;
+int imuCalStep = 0;
 uint32_t lastRollMs = 0;
 uint32_t lastClockDrawMs = 0;
 uint32_t lastPomodoroDrawMs = 0;
@@ -119,6 +122,22 @@ WsClient wsClient;
 PomodoroHistory pomodoroHistory;
 M5Canvas hourglassCanvas(&M5.Display);
 M5Canvas seaCanvas(&M5.Display);
+
+struct ImuSample {
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  bool valid = false;
+};
+constexpr const char *kImuCalSteps[] = {
+    "Vertical",
+    "Left flat",
+    "Right flat",
+    "Face up",
+    "Face down",
+};
+constexpr int kImuCalStepCount = sizeof(kImuCalSteps) / sizeof(kImuCalSteps[0]);
+ImuSample imuCalSamples[kImuCalStepCount];
 
 void drawPomodoroPrompt();
 void returnToMenu();
@@ -1049,6 +1068,93 @@ void enterSea() {
   drawSea(true);
 }
 
+bool readAverageAccel(float &ax, float &ay, float &az, int samples = 24) {
+  float sx = 0.0f;
+  float sy = 0.0f;
+  float sz = 0.0f;
+  int count = 0;
+  for (int i = 0; i < samples; ++i) {
+    float rx = 0.0f;
+    float ry = 0.0f;
+    float rz = 0.0f;
+    if (readAccel(rx, ry, rz)) {
+      sx += rx;
+      sy += ry;
+      sz += rz;
+      ++count;
+    }
+    delay(10);
+  }
+  if (count == 0) return false;
+  ax = sx / count;
+  ay = sy / count;
+  az = sz / count;
+  return true;
+}
+
+void drawImuCal() {
+  M5.Display.setRotation(0);
+  auto &display = M5.Display;
+  const int w = display.width();
+  const int h = display.height();
+
+  display.fillScreen(TFT_BLACK);
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(2);
+  display.drawString("IMU Cal", w / 2, 18);
+
+  display.setTextSize(1);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString("Hold pose, press A", w / 2, 46);
+
+  display.setTextDatum(top_left);
+  for (int i = 0; i < kImuCalStepCount; ++i) {
+    const int y = 66 + i * 30;
+    const bool current = i == imuCalStep;
+    display.setTextColor(current ? TFT_CYAN : TFT_WHITE, TFT_BLACK);
+    display.drawString(String(i + 1) + ". " + kImuCalSteps[i], 8, y);
+    display.setTextColor(imuCalSamples[i].valid ? TFT_GREEN : TFT_DARKGREY, TFT_BLACK);
+    if (imuCalSamples[i].valid) {
+      char buffer[36];
+      snprintf(buffer, sizeof(buffer), "%.2f %.2f %.2f",
+               imuCalSamples[i].ax, imuCalSamples[i].ay, imuCalSamples[i].az);
+      display.drawString(buffer, 18, y + 12);
+    } else {
+      display.drawString("not captured", 18, y + 12);
+    }
+  }
+
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString("A: Capture  B: Menu", w / 2, h - 8);
+}
+
+void captureImuCalStep() {
+  if (imuCalStep >= kImuCalStepCount) imuCalStep = 0;
+  float ax = 0.0f;
+  float ay = 0.0f;
+  float az = 0.0f;
+  if (readAverageAccel(ax, ay, az, 28)) {
+    imuCalSamples[imuCalStep].ax = ax;
+    imuCalSamples[imuCalStep].ay = ay;
+    imuCalSamples[imuCalStep].az = az;
+    imuCalSamples[imuCalStep].valid = true;
+    LOGI("imu-cal", "%s ax=%.3f ay=%.3f az=%.3f",
+         kImuCalSteps[imuCalStep], ax, ay, az);
+    imuCalStep = (imuCalStep + 1) % kImuCalStepCount;
+  } else {
+    LOGW("imu-cal", "capture failed");
+  }
+  drawImuCal();
+}
+
+void enterImuCal() {
+  screen = Screen::ImuCal;
+  imuCalStep = 0;
+  drawImuCal();
+}
+
 void savePomodoroStopped() {
   if (!pomodoroActive || pomodoroFinishedRecorded) return;
 
@@ -1152,7 +1258,12 @@ void enterSelectedApp() {
     return;
   }
 
-  enterSea();
+  if (menuIndex == 3) {
+    enterSea();
+    return;
+  }
+
+  enterImuCal();
 }
 
 void returnToMenu() {
@@ -1303,6 +1414,10 @@ void loop() {
         drawSea(true);
       } else {
         drawSea();
+      }
+    } else if (screen == Screen::ImuCal) {
+      if (M5.BtnA.wasPressed()) {
+        captureImuCalStep();
       }
     }
   }
