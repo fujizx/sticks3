@@ -14,10 +14,13 @@
 namespace {
 constexpr uint32_t kRollCooldownMs = 650;
 constexpr uint32_t kClockRefreshMs = 1000;
+constexpr uint32_t kEcoClockRefreshMs = 10000;
+constexpr uint32_t kEcoIdleMs = 10UL * 60UL * 1000UL;
 constexpr uint32_t kUiFrameDelayMs = 20;
 constexpr uint32_t kPomodoroFrameMs = 60;
 constexpr uint32_t kSeaFrameMs = 45;
-constexpr uint8_t kDisplayBrightness = 90;
+constexpr uint8_t kDisplayBrightness = 50;
+constexpr uint8_t kEcoDisplayBrightness = 15;
 constexpr uint8_t kPomodoroDoneVolume = 77;
 constexpr float kShakeThreshold = 1.6f;
 constexpr float kInvertThreshold = -0.70f;
@@ -47,7 +50,7 @@ enum class Screen {
   PomodoroRecords,
   PomodoroRun,
   PomodoroPrompt,
-  Dice,
+  SuanGua,
   Sea,
   ImuCal,
 };
@@ -55,7 +58,7 @@ enum class Screen {
 constexpr const char *kMenuItems[] = {
     "Clock",
     "Pomodoro",
-    "Dice",
+    "SuanGua",
     "Sea",
     "IMU Cal",
 };
@@ -77,15 +80,20 @@ uint32_t lastRollMs = 0;
 uint32_t lastClockDrawMs = 0;
 uint32_t lastPomodoroDrawMs = 0;
 uint32_t lastSeaDrawMs = 0;
+uint32_t lastUserActivityMs = 0;
 uint32_t pomodoroStartMs = 0;
 uint32_t pomodoroDurationMs = 25UL * 60UL * 1000UL;
 uint32_t bootMs = 0;
-int dieValue = 1;
+uint8_t guaLines[6] = {};
+int guaLineCount = 0;
+int guaPage = 0;
 bool imuReady = false;
 bool pomodoroInverted = false;
 bool pomodoroActive = false;
 bool pomodoroFinishedRecorded = false;
 bool pomodoroGravityReady = false;
+bool ecoMode = false;
+uint8_t activeBrightness = 0;
 float pomodoroBaseAx = 0.0f;
 float pomodoroBaseAy = 1.0f;
 float pomodoroBaseAz = 0.0f;
@@ -145,6 +153,7 @@ constexpr int kImuCalStepCount = sizeof(kImuCalSteps) / sizeof(kImuCalSteps[0]);
 ImuSample imuCalSamples[kImuCalStepCount];
 
 void drawPomodoroPrompt();
+void drawClock(bool force);
 void returnToMenu();
 
 bool bottleInside(int x, int y) {
@@ -281,54 +290,318 @@ bool readAccel(float &ax, float &ay, float &az) {
   return true;
 }
 
-void drawDieFace(int n) {
+bool guaLineIsYang(uint8_t line) {
+  return line == 7 || line == 9;
+}
+
+bool guaLineIsMoving(uint8_t line) {
+  return line == 6 || line == 9;
+}
+
+uint8_t changedGuaLine(uint8_t line) {
+  if (line == 6) return 7;
+  if (line == 9) return 8;
+  return line;
+}
+
+constexpr const char *kTrigramNames[] = {"Kun", "Zhen", "Kan", "Dui", "Gen", "Li", "Xun", "Qian"};
+constexpr uint8_t kKingWenMap[8][8] = {
+    {2, 24, 7, 19, 15, 36, 46, 11},
+    {16, 51, 40, 54, 62, 55, 32, 34},
+    {8, 3, 29, 60, 39, 63, 48, 5},
+    {45, 17, 47, 58, 31, 49, 28, 43},
+    {23, 27, 4, 41, 52, 22, 18, 26},
+    {35, 21, 64, 38, 56, 30, 50, 14},
+    {20, 42, 59, 61, 53, 37, 57, 9},
+    {12, 25, 6, 10, 33, 13, 44, 1},
+};
+constexpr const char *kHexagramNames[] = {
+    "",
+    "乾",
+    "坤",
+    "屯",
+    "蒙",
+    "需",
+    "讼",
+    "师",
+    "比",
+    "小畜",
+    "履",
+    "泰",
+    "否",
+    "同人",
+    "大有",
+    "谦",
+    "豫",
+    "随",
+    "蛊",
+    "临",
+    "观",
+    "噬嗑",
+    "贲",
+    "剥",
+    "复",
+    "无妄",
+    "大畜",
+    "颐",
+    "大过",
+    "坎",
+    "离",
+    "咸",
+    "恒",
+    "遁",
+    "大壮",
+    "晋",
+    "明夷",
+    "家人",
+    "睽",
+    "蹇",
+    "解",
+    "损",
+    "益",
+    "夬",
+    "姤",
+    "萃",
+    "升",
+    "困",
+    "井",
+    "革",
+    "鼎",
+    "震",
+    "艮",
+    "渐",
+    "归妹",
+    "丰",
+    "旅",
+    "巽",
+    "兑",
+    "涣",
+    "节",
+    "中孚",
+    "小过",
+    "既济",
+    "未济"
+};
+constexpr const char *kHexagramAdvice[] = {
+    "",
+    "守正有力，主动承担。",
+    "顺势包容，厚积待时。",
+    "初起艰难，先稳根基。",
+    "信息不足，多问多学。",
+    "等待时机，勿急躁。",
+    "有争执，先讲规则。",
+    "组织资源，谨慎推进。",
+    "亲近同道，确认立场。",
+    "小有积累，柔和推进。",
+    "谨慎行事，守礼避险。",
+    "上下相通，适合行动。",
+    "闭塞不通，先守后变。",
+    "开放协作，求同存异。",
+    "资源充足，勿骄。",
+    "低调谦逊，反而有利。",
+    "顺势而动，保持节制。",
+    "跟随变化，择善而从。",
+    "清理旧弊，修补根源。",
+    "机会临近，认真准备。",
+    "先观察，再判断。",
+    "有阻隔，果断处理。",
+    "修饰外表，也重内里。",
+    "势弱剥落，保存核心。",
+    "回到正道，重新开始。",
+    "不妄动，守真实。",
+    "积蓄能力，等待大用。",
+    "养正养身，少说多做。",
+    "压力过大，需分担。",
+    "险中求稳，重复确认。",
+    "光明可见，保持清醒。",
+    "相互感应，重视关系。",
+    "贵在恒久，少变多守。",
+    "退让避锋，保全实力。",
+    "力量增长，勿过猛。",
+    "向上发展，把握曝光。",
+    "受伤隐忍，保护火种。",
+    "家内有序，外事才顺。",
+    "意见相背，求小同。",
+    "路难行，找伙伴。",
+    "困局可解，行动松绑。",
+    "有损有得，取舍清楚。",
+    "增益成长，主动助人。",
+    "决断时刻，公开坦诚。",
+    "相遇有因，防微杜渐。",
+    "聚合资源，先定中心。",
+    "稳步上升，不要跳级。",
+    "受困不失志，守信用。",
+    "井养众人，维护根本。",
+    "革旧立新，时机要准。",
+    "鼎新成器，稳固成果。",
+    "震动来临，镇定应对。",
+    "停止妄动，安静观照。",
+    "渐进最稳，循序发展。",
+    "关系未正，慎重承诺。",
+    "盛大光明，也防过满。",
+    "在外漂泊，简化目标。",
+    "柔顺入微，持续渗透。",
+    "悦而不散，沟通有度。",
+    "涣散需聚，先收人心。",
+    "节制边界，定规矩。",
+    "内心诚信，可取信人。",
+    "小事可成，大事宜缓。",
+    "已成仍防乱，善后为重。",
+    "未成之时，谨慎收尾。"
+};
+
+uint8_t guaTrigram(bool upper, bool changed) {
+  uint8_t value = 0;
+  const int start = upper ? 3 : 0;
+  for (int i = 0; i < 3; ++i) {
+    const uint8_t line = changed ? changedGuaLine(guaLines[start + i]) : guaLines[start + i];
+    if (guaLineIsYang(line)) value |= 1 << i;
+  }
+  return value;
+}
+
+int guaNumber(bool changed) {
+  if (guaLineCount < 6) return 0;
+  return kKingWenMap[guaTrigram(true, changed)][guaTrigram(false, changed)];
+}
+
+bool guaHasMovingLine() {
+  for (int i = 0; i < 6; ++i) {
+    if (guaLineIsMoving(guaLines[i])) return true;
+  }
+  return false;
+}
+
+void drawWrappedText(const String &text, int x, int y, int width, int lineHeight, uint16_t color) {
+  auto &display = M5.Display;
+  display.setTextDatum(top_left);
+  display.setTextColor(color, TFT_BLACK);
+  display.setTextSize(1);
+  String line;
+  int cursorY = y;
+  for (size_t i = 0; i < text.length();) {
+    const uint8_t c = static_cast<uint8_t>(text[i]);
+    const int charLen = c >= 0xE0 ? 3 : (c >= 0xC0 ? 2 : 1);
+    const String token = text.substring(i, min(i + charLen, text.length()));
+    const String candidate = line + token;
+    if (display.textWidth(candidate) > width && line.length() > 0) {
+      display.drawString(line, x, cursorY);
+      cursorY += lineHeight;
+      line = token;
+    } else {
+      line = candidate;
+    }
+    i += charLen;
+  }
+  if (line.length() > 0) display.drawString(line, x, cursorY);
+}
+
+void drawYaoLine(int y, uint8_t line, bool filled) {
+  auto &display = M5.Display;
+  const int centerX = display.width() / 2;
+  const int lineW = 80;
+  const int gap = 14;
+  const uint16_t color = filled ? TFT_CYAN : TFT_DARKGREY;
+  const bool yang = filled && guaLineIsYang(line);
+
+  if (!filled) {
+    display.drawFastHLine(centerX - lineW / 2, y, lineW, color);
+    return;
+  }
+  if (yang) {
+    display.fillRect(centerX - lineW / 2, y - 2, lineW, 4, color);
+  } else {
+    display.fillRect(centerX - lineW / 2, y - 2, (lineW - gap) / 2, 4, color);
+    display.fillRect(centerX + gap / 2, y - 2, (lineW - gap) / 2, 4, color);
+  }
+  if (guaLineIsMoving(line)) {
+    display.fillCircle(centerX + lineW / 2 + 10, y, 3, TFT_ORANGE);
+  }
+}
+
+void drawGuaSummary() {
+  auto &display = M5.Display;
+  const int ben = guaNumber(false);
+  const int zhi = guaNumber(true);
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(2);
+  display.drawString(String(ben) + " " + kHexagramNames[ben], display.width() / 2, 50);
+  display.setTextSize(1);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString(String(kTrigramNames[guaTrigram(true, false)]) + " / " + kTrigramNames[guaTrigram(false, false)], display.width() / 2, 75);
+  if (guaHasMovingLine()) {
+    display.drawString("Zhi " + String(zhi) + " " + kHexagramNames[zhi], display.width() / 2, 91);
+  }
+}
+
+void drawSuanGua() {
+  M5.Display.setRotation(0);
   auto &display = M5.Display;
   const int w = display.width();
-  const int h = display.height();
-  const int size = min(w, h) - 34;
-  const int x = (w - size) / 2;
-  const int y = (h - size) / 2 + 6;
-  const int r = max(5, size / 12);
-  const int inset = size / 4;
-  const int mid = size / 2;
 
   display.fillScreen(TFT_BLACK);
   drawStatusBar();
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(2);
+  display.drawString("SuanGua", w / 2, 24);
+
+  if (guaLineCount < 6 || guaPage == 0) {
+    display.setTextDatum(top_center);
+    display.setTextSize(1);
+    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    if (guaLineCount < 6) {
+      display.drawString(String(guaLineCount) + "/6", w / 2, 51);
+    } else {
+      display.drawString("A: explain  Shake: restart", w / 2, 51);
+    }
+    for (int i = 5; i >= 0; --i) {
+      const int row = 5 - i;
+      drawYaoLine(78 + row * 22, i < guaLineCount ? guaLines[i] : 0, i < guaLineCount);
+    }
+    return;
+  }
+
+  drawGuaSummary();
+  const int hex = guaPage == 1 ? guaNumber(false) : guaNumber(true);
+  const char *label = guaPage == 1 ? "Ben" : "Zhi";
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_CYAN, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString("Shake or press A", w / 2, 16);
-
-  display.fillRoundRect(x, y, size, size, 10, TFT_WHITE);
-
-  auto pip = [&](int px, int py) {
-    display.fillCircle(x + px, y + py, r, TFT_BLACK);
-  };
-
-  if (n == 1 || n == 3 || n == 5) pip(mid, mid);
-  if (n >= 2) {
-    pip(inset, inset);
-    pip(size - inset, size - inset);
-  }
-  if (n >= 4) {
-    pip(size - inset, inset);
-    pip(inset, size - inset);
-  }
-  if (n == 6) {
-    pip(inset, mid);
-    pip(size - inset, mid);
-  }
-
+  display.drawString(String(label) + " advice", 12, 116);
+  drawWrappedText(kHexagramAdvice[hex], 12, 134, w - 24, 16, TFT_WHITE);
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString(guaPage == 1 && guaHasMovingLine() ? "A: zhi" : "A: lines", w / 2, 232);
 }
 
-void rollDie() {
+void resetSuanGua() {
+  memset(guaLines, 0, sizeof(guaLines));
+  guaLineCount = 0;
+  guaPage = 0;
+  drawSuanGua();
+}
+
+void castGuaLine() {
   const uint32_t now = millis();
   if (now - lastRollMs < kRollCooldownMs) return;
-
   lastRollMs = now;
-  dieValue = random(1, 7);
-  LOGI("dice", "roll=%d", dieValue);
-  drawDieFace(dieValue);
+
+  if (guaLineCount >= 6) {
+    guaPage = (guaPage + 1) % (guaHasMovingLine() ? 3 : 2);
+    drawSuanGua();
+    return;
+  }
+
+  int coins = 0;
+  for (int i = 0; i < 3; ++i) {
+    coins += random(0, 2) == 0 ? 2 : 3;
+  }
+  guaLines[guaLineCount++] = static_cast<uint8_t>(coins);
+  guaPage = 0;
+  LOGI("suangua", "line=%d value=%d", guaLineCount, coins);
+  drawSuanGua();
 }
 
 bool didShake() {
@@ -339,6 +612,37 @@ bool didShake() {
 
   const float magnitude = sqrtf(ax * ax + ay * ay + az * az);
   return fabsf(magnitude - 1.0f) > kShakeThreshold;
+}
+
+void setDisplayBrightness(uint8_t brightness) {
+  if (activeBrightness == brightness) return;
+  M5.Display.setBrightness(brightness);
+  activeBrightness = brightness;
+}
+
+void noteUserActivity() {
+  lastUserActivityMs = millis();
+  if (!ecoMode) return;
+  ecoMode = false;
+  setDisplayBrightness(kDisplayBrightness);
+  if (screen == Screen::Clock) {
+    lastClockText = "";
+    lastClockDrawMs = 0;
+    drawClock(true);
+  }
+}
+
+void updateEcoMode() {
+  const bool shouldEco = screen == Screen::Clock &&
+                         millis() - lastUserActivityMs >= kEcoIdleMs;
+  if (shouldEco == ecoMode) return;
+  ecoMode = shouldEco;
+  setDisplayBrightness(ecoMode ? kEcoDisplayBrightness : kDisplayBrightness);
+  if (screen == Screen::Clock) {
+    lastClockText = "";
+    lastClockDrawMs = 0;
+    drawClock(true);
+  }
 }
 
 void drawFlipCard(int x, int y, int width, int height, const char *value) {
@@ -792,10 +1096,19 @@ struct TopGrainCell {
   float score;
 };
 
+uint16_t sandColorFor(int x, int y, bool surface = false) {
+  constexpr uint16_t kSandDark = 0x037B;
+  constexpr uint16_t kSandMid = 0x04FF;
+  constexpr uint16_t kSandBright = 0x5DFF;
+  const uint8_t grain = static_cast<uint8_t>((x * 37 + y * 23 + (x ^ y) * 11) & 0x0F);
+  if (surface && grain < 10) return kSandBright;
+  if (grain < 3) return kSandBright;
+  if (grain < 10) return kSandMid;
+  return kSandDark;
+}
+
 template <typename Gfx>
 void drawTopGrains(Gfx &gfx, int remainingGrains, float gravityX, float gravityY) {
-  constexpr uint16_t kBlue = 0x04FF;
-  constexpr uint16_t kBlueDark = 0x039B;
   if (remainingGrains <= 0) return;
 
   if (fabsf(gravityX) < 0.04f && gravityY < 0.04f) {
@@ -828,22 +1141,19 @@ void drawTopGrains(Gfx &gfx, int remainingGrains, float gravityX, float gravityY
     const int y = cells[i].y;
     const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
     const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
-    gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                 ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+    gfx.fillRect(px, py, kGrainCell, kGrainCell, sandColorFor(x, y));
   }
 }
 template <typename Gfx>
 void drawBottomGrains(Gfx &gfx) {
-  constexpr uint16_t kBlue = 0x04FF;
-  constexpr uint16_t kBlueDark = 0x039B;
   for (int y = kGrainMid; y < kGrainH; ++y) {
     for (int x = 0; x < kGrainW; ++x) {
       if (!grainGrid[y][x]) continue;
       const int px = kGrainX0 + x * kGrainCell - kHourglassSpriteX;
       const int py = kGrainY0 + y * kGrainCell - kHourglassSpriteY;
       if (!hourglassInsideSprite(px + 1, py + 1, kSandInset)) continue;
-      gfx.fillRect(px, py, kGrainCell, kGrainCell,
-                   ((x * 3 + y) % 8 == 0) ? kBlue : kBlueDark);
+      const bool surface = y == kGrainMid || !grainGrid[y - 1][x];
+      gfx.fillRect(px, py, kGrainCell, kGrainCell, sandColorFor(x, y, surface));
     }
   }
 }
@@ -859,13 +1169,14 @@ void drawFallingStream(Gfx &gfx, int centerX, float progress, float leanX) {
     const int x = static_cast<int>(grain.x);
     const int y = static_cast<int>(grain.y);
     if (!hourglassInsideSprite(x, y, kSandInset)) continue;
-    gfx.fillRect(x - 1, y - 1, kGrainCell, kGrainCell, kBlueLight);
+    gfx.drawPixel(x, y, kBlueLight);
+    if (((x + y) & 0x03) == 0) gfx.drawPixel(x, y + 1, kBlueLight);
   }
 }
 
 template <typename Gfx>
 void drawHourglassFrame(Gfx &gfx, int centerX, int topY, int bottomY) {
-  constexpr uint16_t kGlass = 0xBDF7;
+  constexpr uint16_t kGlass = 0x7BEF;
   const int waistY = (topY + bottomY) / 2;
   const int topLeft = centerX - 62;
   const int topRight = centerX + 62;
@@ -1284,7 +1595,8 @@ void savePomodoroStopped() {
 
 void drawClock(bool force = false) {
   const uint32_t now = millis();
-  if (!force && now - lastClockDrawMs < kClockRefreshMs) return;
+  const uint32_t refreshMs = ecoMode ? kEcoClockRefreshMs : kClockRefreshMs;
+  if (!force && now - lastClockDrawMs < refreshMs) return;
   lastClockDrawMs = now;
   const int rotation = clockRotationFromImu();
   const bool portrait = rotation == 0 || rotation == 2;
@@ -1319,7 +1631,7 @@ void drawClock(bool force = false) {
   if (!force && clockText == lastClockText) return;
 
   const String oldClockText = lastClockText;
-  const bool canAnimate = !force && oldClockText.length() == 8;
+  const bool canAnimate = !ecoMode && !force && oldClockText.length() == 8;
   lastClockText = clockText;
 
   if (portrait) {
@@ -1376,8 +1688,8 @@ void enterSelectedApp() {
   }
 
   if (menuIndex == 2) {
-    screen = Screen::Dice;
-    drawDieFace(dieValue);
+    screen = Screen::SuanGua;
+    resetSuanGua();
     return;
   }
 
@@ -1426,7 +1738,8 @@ void setup() {
   randomSeed(esp_random());
   bootMs = millis();
   M5.Display.setRotation(1);
-  M5.Display.setBrightness(kDisplayBrightness);
+  setDisplayBrightness(kDisplayBrightness);
+  lastUserActivityMs = millis();
   LOGI("display", "brightness=%u ui_loop=%luHz clock_redraw=1Hz",
        M5.Display.getBrightness(),
        static_cast<unsigned long>(1000 / kUiFrameDelayMs));
@@ -1459,30 +1772,36 @@ void setup() {
 
 void loop() {
   M5.update();
+  const bool btnA = M5.BtnA.wasPressed();
+  const bool btnB = M5.BtnB.wasPressed();
+  const bool shaken = didShake();
+  if (btnA || btnB || shaken) noteUserActivity();
+  updateEcoMode();
+
   wifiPortal.loop();
   timeSync.loop(wifiPortal.connected());
   battery.loop();
   wsClient.loop();
 
   if (screen == Screen::Menu) {
-    if (didShake()) {
+    if (shaken) {
       menuIndex = 0;
       drawMenu();
     }
-    if (M5.BtnB.wasPressed()) {
+    if (btnB) {
       menuIndex = (menuIndex + 1) % kMenuCount;
       drawMenu();
     }
-    if (M5.BtnA.wasPressed()) {
+    if (btnA) {
       enterSelectedApp();
     }
   } else {
     if (screen == Screen::PomodoroMenu) {
-      if (M5.BtnB.wasPressed()) {
+      if (btnB) {
         pomodoroMenuIndex = (pomodoroMenuIndex + 1) % kPomodoroMenuCount;
         drawPomodoroMenu();
       }
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         if (pomodoroMenuIndex == 0) {
           screen = Screen::PomodoroSelect;
           drawPomodoroSelect();
@@ -1495,29 +1814,29 @@ void loop() {
         }
       }
     } else if (screen == Screen::PomodoroRecords) {
-      if (M5.BtnB.wasPressed()) {
+      if (btnB) {
         const uint8_t count = pomodoroHistory.count();
         if (count > 0) recordPage = (recordPage + 1) % ((count - 1) / 4 + 1);
         drawPomodoroRecords();
       }
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         screen = Screen::PomodoroMenu;
         drawPomodoroMenu();
       }
     } else if (screen == Screen::PomodoroSelect) {
-      if (M5.BtnB.wasPressed()) {
+      if (btnB) {
         pomodoroIndex = (pomodoroIndex + 1) % kPomodoroCount;
         drawPomodoroSelect();
       }
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         startPomodoro();
       }
     } else if (screen == Screen::PomodoroPrompt) {
-      if (M5.BtnB.wasPressed()) {
+      if (btnB) {
         promptIndex = (promptIndex + 1) % 2;
         drawPomodoroPrompt();
       }
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         if (promptIndex == 0) {
           savePomodoroStopped();
           startPomodoro();
@@ -1525,25 +1844,27 @@ void loop() {
           returnToMenu();
         }
       }
-    } else if (M5.BtnB.wasPressed()) {
+    } else if (btnB) {
       returnToMenu();
-    } else if (screen == Screen::Dice) {
-      if (M5.BtnA.wasPressed() || didShake()) {
-        rollDie();
+    } else if (screen == Screen::SuanGua) {
+      if (shaken && guaLineCount >= 6) {
+        resetSuanGua();
+      } else if (btnA || shaken) {
+        castGuaLine();
       }
     } else if (screen == Screen::Clock) {
       drawClock();
     } else if (screen == Screen::PomodoroRun) {
       drawPomodoroRun();
     } else if (screen == Screen::Sea) {
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         calibrateSeaGravity();
         drawSea(true);
       } else {
         drawSea();
       }
     } else if (screen == Screen::ImuCal) {
-      if (M5.BtnA.wasPressed()) {
+      if (btnA) {
         captureImuCalStep();
       }
     }
