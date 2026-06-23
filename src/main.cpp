@@ -338,7 +338,7 @@ bool guaHasMovingLine() {
   return false;
 }
 
-void drawWrappedText(const String &text, int x, int y, int width, int lineHeight, uint16_t color) {
+int drawWrappedText(const String &text, int x, int y, int width, int lineHeight, uint16_t color) {
   auto &display = M5.Display;
   display.setTextDatum(top_left);
   display.setTextColor(color, TFT_BLACK);
@@ -359,7 +359,11 @@ void drawWrappedText(const String &text, int x, int y, int width, int lineHeight
     }
     i += charLen;
   }
-  if (line.length() > 0) display.drawString(line, x, cursorY);
+  if (line.length() > 0) {
+    display.drawString(line, x, cursorY);
+    cursorY += lineHeight;
+  }
+  return cursorY;
 }
 
 void drawYaoLine(int y, uint8_t line, bool filled) {
@@ -421,24 +425,21 @@ void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
 
   if (transformed) {
     display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    drawWrappedText(hex.judgement, 10, 126, w - 20, 14, TFT_LIGHTGREY);
+    int y = drawWrappedText(hex.judgement, 10, 126, w - 20, 14, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("解读", 10, 152);
-    drawWrappedText(hex.summary, 10, 170, w - 20, 14, TFT_WHITE);
+    display.drawString("趋势", 10, y + 4);
+    y = drawWrappedText(hex.transformedSummary, 10, y + 20, w - 20, 14, TFT_WHITE);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("趋势", 10, 202);
-    drawWrappedText(hex.transformedSummary, 10, 218, w - 20, 13, TFT_WHITE);
+    display.drawString("关键词", 10, y + 4);
+    drawWrappedText(hex.keywords, 10, y + 20, w - 20, 14, TFT_DARKGREY);
   } else {
-    drawWrappedText(hex.judgement, 10, 126, w - 20, 15, TFT_LIGHTGREY);
+    int y = drawWrappedText(hex.judgement, 10, 126, w - 20, 15, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("解读", 10, 154);
-    drawWrappedText(hex.summary, 10, 174, w - 20, 15, TFT_WHITE);
-  }
-
-  if (!transformed) {
-    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    display.setTextDatum(bottom_left);
-    display.drawString(String("关键词 ") + hex.keywords, 10, 234);
+    display.drawString("解读", 10, y + 4);
+    y = drawWrappedText(hex.summary, 10, y + 22, w - 20, 15, TFT_WHITE);
+    display.setTextColor(TFT_CYAN, TFT_BLACK);
+    display.drawString("关键词", 10, y + 4);
+    drawWrappedText(hex.keywords, 10, y + 22, w - 20, 15, TFT_DARKGREY);
   }
 }
 
