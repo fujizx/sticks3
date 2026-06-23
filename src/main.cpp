@@ -428,19 +428,24 @@ void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
     int y = drawWrappedText(hex.judgement, 10, 126, w - 20, 14, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
     display.drawString("趋势", 10, y + 4);
-    y = drawWrappedText(hex.transformedSummary, 10, y + 20, w - 20, 14, TFT_WHITE);
-    display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("关键词", 10, y + 4);
-    drawWrappedText(hex.keywords, 10, y + 20, w - 20, 14, TFT_DARKGREY);
+    drawWrappedText(hex.transformedSummary, 10, y + 20, w - 20, 14, TFT_WHITE);
   } else {
     int y = drawWrappedText(hex.judgement, 10, 126, w - 20, 15, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
     display.drawString("解读", 10, y + 4);
-    y = drawWrappedText(hex.summary, 10, y + 22, w - 20, 15, TFT_WHITE);
-    display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("关键词", 10, y + 4);
-    drawWrappedText(hex.keywords, 10, y + 22, w - 20, 15, TFT_DARKGREY);
+    drawWrappedText(hex.summary, 10, y + 22, w - 20, 15, TFT_WHITE);
   }
+}
+
+void drawHexagramKeywords(const IChingHexagram &hex, bool transformed) {
+  auto &display = M5.Display;
+  const int w = display.width();
+  display.setFont(&fonts::efontCN_12);
+  display.setTextSize(1);
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_CYAN, TFT_BLACK);
+  display.drawString(transformed ? "之卦关键词" : "本卦关键词", 10, 108);
+  drawWrappedText(hex.keywords, 10, 130, w - 20, 16, TFT_WHITE);
 }
 
 void drawTrigramHint() {
@@ -491,11 +496,19 @@ void drawSuanGua() {
     return;
   }
 
-  const bool transformedPage = guaPage == 2;
+  const bool hasMoving = guaHasMovingLine();
+  const bool transformedPage = hasMoving && guaPage >= 3;
+  const bool keywordPage = guaPage == 2 || (hasMoving && guaPage == 4);
   drawGuaSummary(transformedPage);
   const int hexId = transformedPage ? guaNumber(true) : guaNumber(false);
   const IChingHexagram *hex = getHexagramById(hexId);
-  if (hex) drawHexagramExplanation(*hex, transformedPage);
+  if (hex) {
+    if (keywordPage) {
+      drawHexagramKeywords(*hex, transformedPage);
+    } else {
+      drawHexagramExplanation(*hex, transformedPage);
+    }
+  }
   display.setFont(&fonts::Font0);
 }
 
@@ -512,7 +525,7 @@ void castGuaLine() {
   lastRollMs = now;
 
   if (guaLineCount >= 6) {
-    guaPage = (guaPage + 1) % (guaHasMovingLine() ? 3 : 2);
+    guaPage = (guaPage + 1) % (guaHasMovingLine() ? 5 : 3);
     drawSuanGua();
     return;
   }
