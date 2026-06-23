@@ -402,14 +402,13 @@ void drawGuaSummary() {
 
   display.setFont(&fonts::efontCN_12);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  const uint8_t upperBits = guaTrigram(true, false);
-  const uint8_t lowerBits = guaTrigram(false, false);
   display.drawString(String(benHex->upper) + "上 / " + benHex->lower + "下", display.width() / 2, 70);
-  display.drawString(String(getTrigramMnemonicByBits(upperBits)) + " / " + getTrigramMnemonicByBits(lowerBits), display.width() / 2, 87);
   if (guaHasMovingLine() && zhiHex) {
-    display.drawString("之卦 " + String(zhi) + " " + zhiHex->name, display.width() / 2, 102);
+    display.drawString("之卦 " + String(zhi) + " " + zhiHex->name, display.width() / 2, 87);
   }
 }
+
+void drawChangedHexagramShape();
 
 void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
   auto &display = M5.Display;
@@ -418,20 +417,58 @@ void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
   display.setTextSize(1);
   display.setTextDatum(top_left);
   display.setTextColor(TFT_CYAN, TFT_BLACK);
-  display.drawString(transformed ? "之卦趋势" : "卦辞", 10, 118);
+  display.drawString(transformed ? "之卦趋势" : "卦辞", 10, 108);
 
   if (transformed) {
-    drawWrappedText(hex.transformedSummary, 10, 136, w - 20, 14, TFT_WHITE);
+    drawChangedHexagramShape();
+    drawWrappedText(hex.transformedSummary, 10, 170, w - 20, 15, TFT_WHITE);
   } else {
-    drawWrappedText(hex.judgement, 10, 136, w - 20, 14, TFT_LIGHTGREY);
+    drawWrappedText(hex.judgement, 10, 126, w - 20, 15, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.drawString("解读", 10, 164);
-    drawWrappedText(hex.summary, 10, 182, w - 20, 14, TFT_WHITE);
+    display.drawString("解读", 10, 154);
+    drawWrappedText(hex.summary, 10, 174, w - 20, 15, TFT_WHITE);
   }
 
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
   display.setTextDatum(bottom_left);
   display.drawString(String("关键词 ") + hex.keywords, 10, 234);
+}
+
+void drawChangedHexagramShape() {
+  auto &display = M5.Display;
+  const int centerX = display.width() / 2;
+  const int lineW = 58;
+  const int gap = 10;
+  const int y0 = 101;
+  const int step = 10;
+  const uint16_t color = TFT_CYAN;
+
+  for (int i = 5; i >= 0; --i) {
+    const int row = 5 - i;
+    const int y = y0 + row * step;
+    const uint8_t line = changedGuaLine(guaLines[i]);
+    if (guaLineIsYang(line)) {
+      display.fillRect(centerX - lineW / 2, y - 1, lineW, 3, color);
+    } else {
+      display.fillRect(centerX - lineW / 2, y - 1, (lineW - gap) / 2, 3, color);
+      display.fillRect(centerX + gap / 2, y - 1, (lineW - gap) / 2, 3, color);
+    }
+  }
+}
+
+void drawTrigramHint() {
+  auto &display = M5.Display;
+  if (guaLineCount < 3) return;
+
+  display.setFont(&fonts::efontCN_12);
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  const uint8_t lowerBits = guaTrigram(false, false);
+  display.drawString(String("下卦 ") + getTrigramNameByBits(lowerBits) + " " + getTrigramMnemonicByBits(lowerBits), display.width() / 2, 207);
+  if (guaLineCount >= 6) {
+    const uint8_t upperBits = guaTrigram(true, false);
+    display.drawString(String("上卦 ") + getTrigramNameByBits(upperBits) + " " + getTrigramMnemonicByBits(upperBits), display.width() / 2, 222);
+  }
 }
 
 void drawSuanGua() {
@@ -460,8 +497,9 @@ void drawSuanGua() {
     }
     for (int i = 5; i >= 0; --i) {
       const int row = 5 - i;
-      drawYaoLine(78 + row * 22, i < guaLineCount ? guaLines[i] : 0, i < guaLineCount);
+      drawYaoLine(68 + row * 21, i < guaLineCount ? guaLines[i] : 0, i < guaLineCount);
     }
+    drawTrigramHint();
     display.setFont(&fonts::Font0);
     return;
   }
