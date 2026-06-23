@@ -386,29 +386,29 @@ void drawYaoLine(int y, uint8_t line, bool filled) {
 }
 
 
-void drawGuaSummary() {
+void drawGuaSummary(bool transformed = false) {
   auto &display = M5.Display;
   const int ben = guaNumber(false);
   const int zhi = guaNumber(true);
   const IChingHexagram *benHex = getHexagramById(ben);
   const IChingHexagram *zhiHex = getHexagramById(zhi);
-  if (!benHex) return;
+  const IChingHexagram *shownHex = transformed && zhiHex ? zhiHex : benHex;
+  const int shownId = transformed && zhiHex ? zhi : ben;
+  if (!shownHex) return;
 
   display.setFont(&fonts::efontCN_16_b);
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(1);
-  display.drawString(String(ben) + " " + benHex->name, display.width() / 2, 48);
+  display.drawString(String(shownId) + " " + shownHex->name, display.width() / 2, 48);
 
   display.setFont(&fonts::efontCN_12);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString(String(benHex->upper) + "上 / " + benHex->lower + "下", display.width() / 2, 70);
-  if (guaHasMovingLine() && zhiHex) {
+  display.drawString(String(shownHex->upper) + "上 / " + shownHex->lower + "下", display.width() / 2, 70);
+  if (!transformed && guaHasMovingLine() && zhiHex) {
     display.drawString("之卦 " + String(zhi) + " " + zhiHex->name, display.width() / 2, 87);
   }
 }
-
-void drawChangedHexagramShape();
 
 void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
   auto &display = M5.Display;
@@ -417,11 +417,17 @@ void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
   display.setTextSize(1);
   display.setTextDatum(top_left);
   display.setTextColor(TFT_CYAN, TFT_BLACK);
-  display.drawString(transformed ? "之卦趋势" : "卦辞", 10, 108);
+  display.drawString(transformed ? "之卦" : "卦辞", 10, 108);
 
   if (transformed) {
-    drawChangedHexagramShape();
-    drawWrappedText(hex.transformedSummary, 10, 170, w - 20, 15, TFT_WHITE);
+    display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    drawWrappedText(hex.judgement, 10, 126, w - 20, 14, TFT_LIGHTGREY);
+    display.setTextColor(TFT_CYAN, TFT_BLACK);
+    display.drawString("解读", 10, 152);
+    drawWrappedText(hex.summary, 10, 170, w - 20, 14, TFT_WHITE);
+    display.setTextColor(TFT_CYAN, TFT_BLACK);
+    display.drawString("趋势", 10, 202);
+    drawWrappedText(hex.transformedSummary, 10, 218, w - 20, 13, TFT_WHITE);
   } else {
     drawWrappedText(hex.judgement, 10, 126, w - 20, 15, TFT_LIGHTGREY);
     display.setTextColor(TFT_CYAN, TFT_BLACK);
@@ -429,30 +435,10 @@ void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
     drawWrappedText(hex.summary, 10, 174, w - 20, 15, TFT_WHITE);
   }
 
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.setTextDatum(bottom_left);
-  display.drawString(String("关键词 ") + hex.keywords, 10, 234);
-}
-
-void drawChangedHexagramShape() {
-  auto &display = M5.Display;
-  const int centerX = display.width() / 2;
-  const int lineW = 58;
-  const int gap = 10;
-  const int y0 = 101;
-  const int step = 10;
-  const uint16_t color = TFT_CYAN;
-
-  for (int i = 5; i >= 0; --i) {
-    const int row = 5 - i;
-    const int y = y0 + row * step;
-    const uint8_t line = changedGuaLine(guaLines[i]);
-    if (guaLineIsYang(line)) {
-      display.fillRect(centerX - lineW / 2, y - 1, lineW, 3, color);
-    } else {
-      display.fillRect(centerX - lineW / 2, y - 1, (lineW - gap) / 2, 3, color);
-      display.fillRect(centerX + gap / 2, y - 1, (lineW - gap) / 2, 3, color);
-    }
+  if (!transformed) {
+    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    display.setTextDatum(bottom_left);
+    display.drawString(String("关键词 ") + hex.keywords, 10, 234);
   }
 }
 
@@ -504,10 +490,11 @@ void drawSuanGua() {
     return;
   }
 
-  drawGuaSummary();
-  const int hexId = guaPage == 1 ? guaNumber(false) : guaNumber(true);
+  const bool transformedPage = guaPage == 2;
+  drawGuaSummary(transformedPage);
+  const int hexId = transformedPage ? guaNumber(true) : guaNumber(false);
   const IChingHexagram *hex = getHexagramById(hexId);
-  if (hex) drawHexagramExplanation(*hex, guaPage == 2);
+  if (hex) drawHexagramExplanation(*hex, transformedPage);
   display.setFont(&fonts::Font0);
 }
 
@@ -1782,9 +1769,7 @@ void loop() {
     } else if (btnB) {
       returnToMenu();
     } else if (screen == Screen::SuanGua) {
-      if (shaken && guaLineCount >= 6) {
-        resetSuanGua();
-      } else if (btnA || shaken) {
+      if (btnA || (shaken && guaLineCount < 6)) {
         castGuaLine();
       }
     } else if (screen == Screen::Clock) {
