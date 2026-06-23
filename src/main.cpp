@@ -10,6 +10,7 @@
 #include "core/PomodoroHistory.h"
 #include "core/TimeSync.h"
 #include "core/WifiPortal.h"
+#include "iching_data.h"
 
 namespace {
 constexpr uint32_t kRollCooldownMs = 650;
@@ -304,7 +305,6 @@ uint8_t changedGuaLine(uint8_t line) {
   return line;
 }
 
-constexpr const char *kTrigramNames[] = {"Kun", "Zhen", "Kan", "Dui", "Gen", "Li", "Xun", "Qian"};
 constexpr uint8_t kKingWenMap[8][8] = {
     {2, 24, 7, 19, 15, 36, 46, 11},
     {16, 51, 40, 54, 62, 55, 32, 34},
@@ -314,140 +314,6 @@ constexpr uint8_t kKingWenMap[8][8] = {
     {35, 21, 64, 38, 56, 30, 50, 14},
     {20, 42, 59, 61, 53, 37, 57, 9},
     {12, 25, 6, 10, 33, 13, 44, 1},
-};
-constexpr const char *kHexagramNames[] = {
-    "",
-    "乾",
-    "坤",
-    "屯",
-    "蒙",
-    "需",
-    "讼",
-    "师",
-    "比",
-    "小畜",
-    "履",
-    "泰",
-    "否",
-    "同人",
-    "大有",
-    "谦",
-    "豫",
-    "随",
-    "蛊",
-    "临",
-    "观",
-    "噬嗑",
-    "贲",
-    "剥",
-    "复",
-    "无妄",
-    "大畜",
-    "颐",
-    "大过",
-    "坎",
-    "离",
-    "咸",
-    "恒",
-    "遁",
-    "大壮",
-    "晋",
-    "明夷",
-    "家人",
-    "睽",
-    "蹇",
-    "解",
-    "损",
-    "益",
-    "夬",
-    "姤",
-    "萃",
-    "升",
-    "困",
-    "井",
-    "革",
-    "鼎",
-    "震",
-    "艮",
-    "渐",
-    "归妹",
-    "丰",
-    "旅",
-    "巽",
-    "兑",
-    "涣",
-    "节",
-    "中孚",
-    "小过",
-    "既济",
-    "未济"
-};
-constexpr const char *kHexagramAdvice[] = {
-    "",
-    "守正有力，主动承担。",
-    "顺势包容，厚积待时。",
-    "初起艰难，先稳根基。",
-    "信息不足，多问多学。",
-    "等待时机，勿急躁。",
-    "有争执，先讲规则。",
-    "组织资源，谨慎推进。",
-    "亲近同道，确认立场。",
-    "小有积累，柔和推进。",
-    "谨慎行事，守礼避险。",
-    "上下相通，适合行动。",
-    "闭塞不通，先守后变。",
-    "开放协作，求同存异。",
-    "资源充足，勿骄。",
-    "低调谦逊，反而有利。",
-    "顺势而动，保持节制。",
-    "跟随变化，择善而从。",
-    "清理旧弊，修补根源。",
-    "机会临近，认真准备。",
-    "先观察，再判断。",
-    "有阻隔，果断处理。",
-    "修饰外表，也重内里。",
-    "势弱剥落，保存核心。",
-    "回到正道，重新开始。",
-    "不妄动，守真实。",
-    "积蓄能力，等待大用。",
-    "养正养身，少说多做。",
-    "压力过大，需分担。",
-    "险中求稳，重复确认。",
-    "光明可见，保持清醒。",
-    "相互感应，重视关系。",
-    "贵在恒久，少变多守。",
-    "退让避锋，保全实力。",
-    "力量增长，勿过猛。",
-    "向上发展，把握曝光。",
-    "受伤隐忍，保护火种。",
-    "家内有序，外事才顺。",
-    "意见相背，求小同。",
-    "路难行，找伙伴。",
-    "困局可解，行动松绑。",
-    "有损有得，取舍清楚。",
-    "增益成长，主动助人。",
-    "决断时刻，公开坦诚。",
-    "相遇有因，防微杜渐。",
-    "聚合资源，先定中心。",
-    "稳步上升，不要跳级。",
-    "受困不失志，守信用。",
-    "井养众人，维护根本。",
-    "革旧立新，时机要准。",
-    "鼎新成器，稳固成果。",
-    "震动来临，镇定应对。",
-    "停止妄动，安静观照。",
-    "渐进最稳，循序发展。",
-    "关系未正，慎重承诺。",
-    "盛大光明，也防过满。",
-    "在外漂泊，简化目标。",
-    "柔顺入微，持续渗透。",
-    "悦而不散，沟通有度。",
-    "涣散需聚，先收人心。",
-    "节制边界，定规矩。",
-    "内心诚信，可取信人。",
-    "小事可成，大事宜缓。",
-    "已成仍防乱，善后为重。",
-    "未成之时，谨慎收尾。"
 };
 
 uint8_t guaTrigram(bool upper, bool changed) {
@@ -519,20 +385,53 @@ void drawYaoLine(int y, uint8_t line, bool filled) {
   }
 }
 
+
 void drawGuaSummary() {
   auto &display = M5.Display;
   const int ben = guaNumber(false);
   const int zhi = guaNumber(true);
+  const IChingHexagram *benHex = getHexagramById(ben);
+  const IChingHexagram *zhiHex = getHexagramById(zhi);
+  if (!benHex) return;
+
+  display.setFont(&fonts::efontCN_16_b);
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
-  display.setTextSize(2);
-  display.drawString(String(ben) + " " + kHexagramNames[ben], display.width() / 2, 50);
   display.setTextSize(1);
+  display.drawString(String(ben) + " " + benHex->name, display.width() / 2, 48);
+
+  display.setFont(&fonts::efontCN_12);
   display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString(String(kTrigramNames[guaTrigram(true, false)]) + " / " + kTrigramNames[guaTrigram(false, false)], display.width() / 2, 75);
-  if (guaHasMovingLine()) {
-    display.drawString("Zhi " + String(zhi) + " " + kHexagramNames[zhi], display.width() / 2, 91);
+  const uint8_t upperBits = guaTrigram(true, false);
+  const uint8_t lowerBits = guaTrigram(false, false);
+  display.drawString(String(benHex->upper) + "上 / " + benHex->lower + "下", display.width() / 2, 70);
+  display.drawString(String(getTrigramMnemonicByBits(upperBits)) + " / " + getTrigramMnemonicByBits(lowerBits), display.width() / 2, 87);
+  if (guaHasMovingLine() && zhiHex) {
+    display.drawString("之卦 " + String(zhi) + " " + zhiHex->name, display.width() / 2, 102);
   }
+}
+
+void drawHexagramExplanation(const IChingHexagram &hex, bool transformed) {
+  auto &display = M5.Display;
+  const int w = display.width();
+  display.setFont(&fonts::efontCN_12);
+  display.setTextSize(1);
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_CYAN, TFT_BLACK);
+  display.drawString(transformed ? "之卦趋势" : "卦辞", 10, 118);
+
+  if (transformed) {
+    drawWrappedText(hex.transformedSummary, 10, 136, w - 20, 14, TFT_WHITE);
+  } else {
+    drawWrappedText(hex.judgement, 10, 136, w - 20, 14, TFT_LIGHTGREY);
+    display.setTextColor(TFT_CYAN, TFT_BLACK);
+    display.drawString("解读", 10, 164);
+    drawWrappedText(hex.summary, 10, 182, w - 20, 14, TFT_WHITE);
+  }
+
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextDatum(bottom_left);
+  display.drawString(String("关键词 ") + hex.keywords, 10, 234);
 }
 
 void drawSuanGua() {
@@ -542,6 +441,7 @@ void drawSuanGua() {
 
   display.fillScreen(TFT_BLACK);
   drawStatusBar();
+  display.setFont(&fonts::Font0);
   display.setTextDatum(top_center);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextSize(2);
@@ -554,26 +454,23 @@ void drawSuanGua() {
     if (guaLineCount < 6) {
       display.drawString(String(guaLineCount) + "/6", w / 2, 51);
     } else {
-      display.drawString("A: explain  Shake: restart", w / 2, 51);
+      display.setFont(&fonts::efontCN_12);
+      display.drawString("已成卦", w / 2, 51);
+      display.setFont(&fonts::Font0);
     }
     for (int i = 5; i >= 0; --i) {
       const int row = 5 - i;
       drawYaoLine(78 + row * 22, i < guaLineCount ? guaLines[i] : 0, i < guaLineCount);
     }
+    display.setFont(&fonts::Font0);
     return;
   }
 
   drawGuaSummary();
-  const int hex = guaPage == 1 ? guaNumber(false) : guaNumber(true);
-  const char *label = guaPage == 1 ? "Ben" : "Zhi";
-  display.setTextDatum(top_left);
-  display.setTextColor(TFT_CYAN, TFT_BLACK);
-  display.setTextSize(1);
-  display.drawString(String(label) + " advice", 12, 116);
-  drawWrappedText(kHexagramAdvice[hex], 12, 134, w - 24, 16, TFT_WHITE);
-  display.setTextDatum(bottom_center);
-  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  display.drawString(guaPage == 1 && guaHasMovingLine() ? "A: zhi" : "A: lines", w / 2, 232);
+  const int hexId = guaPage == 1 ? guaNumber(false) : guaNumber(true);
+  const IChingHexagram *hex = getHexagramById(hexId);
+  if (hex) drawHexagramExplanation(*hex, guaPage == 2);
+  display.setFont(&fonts::Font0);
 }
 
 void resetSuanGua() {
