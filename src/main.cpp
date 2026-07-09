@@ -6,6 +6,7 @@
 #include "core/AppConfig.h"
 #include "core/AppLog.h"
 #include "core/BatteryMeter.h"
+#include "core/GuaHistory.h"
 #include "core/NetClient.h"
 #include "core/PomodoroHistory.h"
 #include "core/TimeSync.h"
@@ -134,6 +135,7 @@ BatteryMeter battery;
 HttpClient httpClient;
 WsClient wsClient;
 PomodoroHistory pomodoroHistory;
+GuaHistory guaHistory;
 M5Canvas hourglassCanvas(&M5.Display);
 M5Canvas seaCanvas(&M5.Display);
 
@@ -152,6 +154,8 @@ constexpr const char *kImuCalSteps[] = {
 };
 constexpr int kImuCalStepCount = sizeof(kImuCalSteps) / sizeof(kImuCalSteps[0]);
 ImuSample imuCalSamples[kImuCalStepCount];
+
+String recordTimeText(uint32_t epoch);
 
 void drawPomodoroPrompt();
 void drawClock(bool force);
@@ -338,6 +342,14 @@ bool guaHasMovingLine() {
   return false;
 }
 
+int guaHistoryPageIndex() {
+  return guaHasMovingLine() ? 5 : 3;
+}
+
+int guaPageCount() {
+  return guaHistoryPageIndex() + 1;
+}
+
 int drawWrappedText(const String &text, int x, int y, int width, int lineHeight, uint16_t color) {
   auto &display = M5.Display;
   display.setTextDatum(top_left);
@@ -448,6 +460,50 @@ void drawHexagramKeywords(const IChingHexagram &hex, bool transformed) {
   drawWrappedText(hex.keywords, 10, 130, w - 20, 16, TFT_WHITE);
 }
 
+String guaRecordName(uint8_t id) {
+  const IChingHexagram *hex = getHexagramById(id);
+  if (!hex) return "--";
+  return String(id) + " " + hex->name;
+}
+
+void drawGuaHistory() {
+  auto &display = M5.Display;
+  const int w = display.width();
+
+  display.setFont(&fonts::Font0);
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(2);
+  display.drawString("History", w / 2, 48);
+
+  const uint8_t count = guaHistory.count();
+  display.setTextSize(1);
+  if (count == 0) {
+    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    display.drawString("No records yet", w / 2, 96);
+    return;
+  }
+
+  for (uint8_t i = 0; i < count; ++i) {
+    GuaRecord record;
+    if (!guaHistory.get(i, record)) break;
+
+    const int y = 82 + i * 48;
+    display.setTextDatum(top_left);
+    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    display.drawString(recordTimeText(record.createdAt), 10, y);
+
+    display.setFont(&fonts::efontCN_12);
+    display.setTextColor(TFT_WHITE, TFT_BLACK);
+    display.drawString(guaRecordName(record.hexagramId), 10, y + 15);
+
+    display.setTextColor(TFT_CYAN, TFT_BLACK);
+    const String transformed = record.transformedId > 0 ? guaRecordName(record.transformedId) : "--";
+    display.drawString(String("-> ") + transformed, 10, y + 30);
+    display.setFont(&fonts::Font0);
+  }
+}
+
 void drawTrigramHint() {
   auto &display = M5.Display;
   if (guaLineCount < 3) return;
@@ -496,6 +552,11 @@ void drawSuanGua() {
     return;
   }
 
+  if (guaPage == guaHistoryPageIndex()) {
+    drawGuaHistory();
+    return;
+  }
+
   const bool hasMoving = guaHasMovingLine();
   const bool transformedPage = hasMoving && guaPage >= 3;
   const bool keywordPage = guaPage == 2 || (hasMoving && guaPage == 4);
@@ -519,13 +580,26 @@ void resetSuanGua() {
   drawSuanGua();
 }
 
+void saveCurrentGuaRecord() {
+  const int ben = guaNumber(false);
+  if (ben <= 0) return;
+
+  GuaRecord record;
+  record.createdAt = static_cast<uint32_t>(time(nullptr));
+  record.hexagramId = static_cast<uint8_t>(ben);
+  record.transformedId = guaHasMovingLine() ? static_cast<uint8_t>(guaNumber(true)) : 0;
+  guaHistory.add(record);
+  LOGI("suangua", "record hex=%u transformed=%u",
+       record.hexagramId, record.transformedId);
+}
+
 void castGuaLine() {
   const uint32_t now = millis();
   if (now - lastRollMs < kRollCooldownMs) return;
   lastRollMs = now;
 
   if (guaLineCount >= 6) {
-    guaPage = (guaPage + 1) % (guaHasMovingLine() ? 5 : 3);
+    guaPage = (guaPage + 1) % guaPageCount();
     drawSuanGua();
     return;
   }
@@ -537,6 +611,9 @@ void castGuaLine() {
   guaLines[guaLineCount++] = static_cast<uint8_t>(coins);
   guaPage = 0;
   LOGI("suangua", "line=%d value=%d", guaLineCount, coins);
+  if (guaLineCount == 6) {
+    saveCurrentGuaRecord();
+  }
   drawSuanGua();
 }
 
@@ -1687,6 +1764,9 @@ void setup() {
   }
   if (!pomodoroHistory.begin()) {
     LOGE("pomodoro", "history init failed");
+  }
+  if (!guaHistory.begin()) {
+    LOGE("suangua", "history init failed");
   }
   const AppSettings &settings = appConfig.settings();
   httpClient.setBaseUrl(settings.httpBaseUrl);
