@@ -7,23 +7,19 @@
 #include "core/AppLog.h"
 #include "core/BatteryMeter.h"
 #include "core/GuaHistory.h"
-#include "core/NetClient.h"
 #include "core/PomodoroHistory.h"
+#include "core/PowerPolicy.h"
 #include "core/TimeSync.h"
 #include "core/WifiPortal.h"
+#include "apps/Pet.h"
 #include "apps/SandTimer.h"
 #include "iching_data.h"
 
 namespace {
 constexpr uint32_t kRollCooldownMs = 650;
 constexpr uint32_t kClockRefreshMs = 1000;
-constexpr uint32_t kEcoClockRefreshMs = 10000;
-constexpr uint32_t kEcoIdleMs = 10UL * 60UL * 1000UL;
-constexpr uint32_t kUiFrameDelayMs = 20;
-constexpr uint32_t kPomodoroFrameMs = 60;
-constexpr uint32_t kSeaFrameMs = 45;
+constexpr uint32_t kPomodoroFrameMs = 67;
 constexpr uint8_t kDisplayBrightness = 50;
-constexpr uint8_t kEcoDisplayBrightness = 15;
 constexpr uint8_t kPomodoroDoneVolume = 77;
 constexpr float kShakeThreshold = 1.6f;
 constexpr float kInvertThreshold = -0.70f;
@@ -56,17 +52,19 @@ enum class Screen {
   SandTimerSelect,
   SandTimerRun,
   SandTimerPrompt,
+  Pet,
   SuanGua,
-  Sea,
+  DeviceInfo,
   ImuCal,
 };
 
 constexpr const char *kMenuItems[] = {
+    "Pet",
     "Clock",
     "Pomodoro",
     "SandTimer",
     "SuanGua",
-    "Sea",
+    "Info",
     "IMU Cal",
 };
 constexpr int kMenuCount = sizeof(kMenuItems) / sizeof(kMenuItems[0]);
@@ -81,14 +79,14 @@ int menuIndex = 0;
 int pomodoroMenuIndex = 0;
 int pomodoroIndex = 1;
 int sandTimerIndex = 2;
+int deviceInfoPage = 0;
 int promptIndex = 0;
 int recordPage = 0;
 int imuCalStep = 0;
 uint32_t lastRollMs = 0;
 uint32_t lastClockDrawMs = 0;
 uint32_t lastPomodoroDrawMs = 0;
-uint32_t lastSeaDrawMs = 0;
-uint32_t lastUserActivityMs = 0;
+uint32_t lastDeviceInfoDrawMs = 0;
 uint32_t pomodoroStartMs = 0;
 uint32_t pomodoroDurationMs = 25UL * 60UL * 1000UL;
 uint32_t bootMs = 0;
@@ -100,20 +98,11 @@ bool pomodoroInverted = false;
 bool pomodoroActive = false;
 bool pomodoroFinishedRecorded = false;
 bool pomodoroGravityReady = false;
-bool ecoMode = false;
-uint8_t activeBrightness = 0;
 float pomodoroBaseAx = 0.0f;
 float pomodoroBaseAy = 1.0f;
 float pomodoroBaseAz = 0.0f;
 float liquidLeanX = 0.0f;
 float liquidLeanY = 1.0f;
-bool seaGravityReady = false;
-float seaBaseAx = 0.0f;
-float seaBaseAy = 1.0f;
-float seaBaseAz = 0.0f;
-float seaGravityX = 0.0f;
-float seaGravityY = 1.0f;
-float seaWavePhase = 0.0f;
 bool grainGrid[kGrainH][kGrainW] = {};
 int grainCount = 0;
 int grainCapacity = 0;
@@ -138,12 +127,10 @@ AppConfig appConfig;
 WifiPortal wifiPortal;
 TimeSync timeSync;
 BatteryMeter battery;
-HttpClient httpClient;
-WsClient wsClient;
+PowerPolicy powerPolicy;
 PomodoroHistory pomodoroHistory;
 GuaHistory guaHistory;
 M5Canvas hourglassCanvas(&M5.Display);
-M5Canvas seaCanvas(&M5.Display);
 
 struct ImuSample {
   float ax = 0.0f;
@@ -166,34 +153,6 @@ String recordTimeText(uint32_t epoch);
 void drawPomodoroPrompt();
 void drawClock(bool force);
 void returnToMenu();
-
-bool bottleInside(int x, int y) {
-  constexpr int left = 15;
-  constexpr int right = 119;
-  constexpr int top = 27;
-  constexpr int bottom = 224;
-  constexpr int radius = 14;
-  if (x < left || x > right || y < top || y > bottom) return false;
-
-  if (y < top + radius) {
-    const int dy = top + radius - y;
-    const int dx = radius - static_cast<int>(sqrtf(radius * radius - dy * dy));
-    return x >= left + dx && x <= right - dx;
-  }
-  if (y > bottom - radius) {
-    const int dy = y - (bottom - radius);
-    const int dx = radius - static_cast<int>(sqrtf(radius * radius - dy * dy));
-    return x >= left + dx && x <= right - dx;
-  }
-  return true;
-}
-
-template <typename Gfx>
-void drawBottleFrame(Gfx &gfx) {
-  constexpr uint16_t kGlass = 0xBDF7;
-  gfx.drawRoundRect(13, 25, 109, 202, 16, kGlass);
-  gfx.drawRoundRect(14, 26, 107, 200, 15, 0x5AEB);
-}
 
 void drawFooter(const char *left, const char *right) {
   auto &display = M5.Display;
@@ -632,17 +591,8 @@ bool didShake() {
   return fabsf(magnitude - 1.0f) > kShakeThreshold;
 }
 
-void setDisplayBrightness(uint8_t brightness) {
-  if (activeBrightness == brightness) return;
-  M5.Display.setBrightness(brightness);
-  activeBrightness = brightness;
-}
-
 void noteUserActivity() {
-  lastUserActivityMs = millis();
-  if (!ecoMode) return;
-  ecoMode = false;
-  setDisplayBrightness(kDisplayBrightness);
+  powerPolicy.noteActivity();
   if (screen == Screen::Clock) {
     lastClockText = "";
     lastClockDrawMs = 0;
@@ -650,19 +600,92 @@ void noteUserActivity() {
   }
 }
 
-void updateEcoMode() {
-  const bool shouldEco = screen == Screen::Clock &&
-                         millis() - lastUserActivityMs >= kEcoIdleMs;
-  if (shouldEco == ecoMode) return;
-  ecoMode = shouldEco;
-  setDisplayBrightness(ecoMode ? kEcoDisplayBrightness : kDisplayBrightness);
-  if (screen == Screen::Clock) {
-    lastClockText = "";
-    lastClockDrawMs = 0;
-    drawClock(true);
-  }
+bool isAnimatedScreen() {
+  return screen == Screen::PomodoroRun || screen == Screen::SandTimerRun ||
+         screen == Screen::Pet;
 }
 
+bool screenAllowsShake() {
+  return screen == Screen::SuanGua;
+}
+
+String bytesText(uint32_t bytes) {
+  if (bytes >= 1024UL * 1024UL) return String(bytes / (1024UL * 1024UL)) + " MB";
+  return String(bytes / 1024UL) + " KB";
+}
+
+String uptimeText() {
+  const uint32_t seconds = millis() / 1000;
+  const uint32_t hh = seconds / 3600;
+  const uint32_t mm = (seconds / 60) % 60;
+  const uint32_t ss = seconds % 60;
+  char buffer[16];
+  snprintf(buffer, sizeof(buffer), "%02lu:%02lu:%02lu",
+           static_cast<unsigned long>(hh),
+           static_cast<unsigned long>(mm),
+           static_cast<unsigned long>(ss));
+  return String(buffer);
+}
+
+void drawInfoRow(int y, const String &label, const String &value) {
+  auto &display = M5.Display;
+  display.setTextSize(1);
+  display.setTextDatum(top_left);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString(label, 8, y);
+  display.setTextDatum(top_right);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.drawString(value, display.width() - 8, y);
+}
+
+void drawDeviceInfo(bool force = false) {
+  const uint32_t now = millis();
+  if (!force && now - lastDeviceInfoDrawMs < 2000) return;
+  lastDeviceInfoDrawMs = now;
+
+  M5.Display.setRotation(0);
+  auto &display = M5.Display;
+  display.fillScreen(TFT_BLACK);
+  drawStatusBar();
+  display.setTextDatum(top_center);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextSize(2);
+  display.drawString("Device Info", display.width() / 2, 18);
+  display.setTextSize(1);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.drawString(String(deviceInfoPage + 1) + "/2", display.width() / 2, 39);
+
+  battery.loop();
+  int y = 58;
+  if (deviceInfoPage == 0) {
+    drawInfoRow(y, "Battery cap", "250 mAh"); y += 16;
+    drawInfoRow(y, "Battery now", battery.level() >= 0 ? String(battery.level()) + "%" : String("--")); y += 16;
+    drawInfoRow(y, "Voltage", battery.voltageMv() > 0 ? String(battery.voltageMv()) + " mV" : String("--")); y += 16;
+    drawInfoRow(y, "Current", String(battery.currentMa()) + " mA"); y += 16;
+    drawInfoRow(y, "Charging", battery.charging() ? "Yes" : "No"); y += 20;
+    drawInfoRow(y, "WiFi", wifiPortal.statusText()); y += 16;
+    drawInfoRow(y, "SSID", wifiPortal.ssid()); y += 16;
+    drawInfoRow(y, "IP", wifiPortal.ip()); y += 16;
+    drawInfoRow(y, "RSSI", wifiPortal.everConnected() ? String(wifiPortal.rssi()) + " dBm" : String("--")); y += 16;
+    drawInfoRow(y, "NTP", timeSync.ready() ? "Synced" : "Waiting");
+  } else {
+    drawInfoRow(y, "Heap free", bytesText(ESP.getFreeHeap())); y += 16;
+    drawInfoRow(y, "Heap min", bytesText(ESP.getMinFreeHeap())); y += 16;
+    drawInfoRow(y, "Heap size", bytesText(ESP.getHeapSize())); y += 16;
+    drawInfoRow(y, "PSRAM free", bytesText(ESP.getFreePsram())); y += 16;
+    drawInfoRow(y, "PSRAM size", bytesText(ESP.getPsramSize())); y += 20;
+    drawInfoRow(y, "Sketch", bytesText(ESP.getSketchSize())); y += 16;
+    drawInfoRow(y, "Free sketch", bytesText(ESP.getFreeSketchSpace())); y += 16;
+    drawInfoRow(y, "Flash", bytesText(ESP.getFlashChipSize())); y += 16;
+    drawInfoRow(y, "CPU", String(ESP.getCpuFreqMHz()) + " MHz"); y += 16;
+    drawInfoRow(y, "Uptime", uptimeText());
+  }
+
+  display.setTextDatum(bottom_center);
+  display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+  display.setTextSize(1);
+  display.drawString("A Next  B Back", display.width() / 2, display.height() - 3);
+}
 void drawFlipCard(int x, int y, int width, int height, const char *value) {
   auto &display = M5.Display;
   constexpr uint16_t kCardTop = 0x3186;
@@ -1409,104 +1432,6 @@ void drawPomodoroPrompt() {
   display.setTextSize(1);
 }
 
-void calibrateSeaGravity() {
-  float ax = 0.0f;
-  float ay = 0.0f;
-  float az = 0.0f;
-  float sumAx = 0.0f;
-  float sumAy = 0.0f;
-  float sumAz = 0.0f;
-  int samples = 0;
-  seaGravityReady = false;
-  delay(80);
-  for (int i = 0; i < 18; ++i) {
-    if (readAccel(ax, ay, az)) {
-      sumAx += ax;
-      sumAy += ay;
-      sumAz += az;
-      ++samples;
-    }
-    delay(8);
-  }
-  if (samples > 0) {
-    seaBaseAx = sumAx / samples;
-    seaBaseAy = sumAy / samples;
-    seaBaseAz = sumAz / samples;
-    seaGravityReady = true;
-  }
-  seaGravityX = 0.0f;
-  seaGravityY = 1.0f;
-  seaWavePhase = 0.0f;
-  LOGI("sea", "gravity base ready=%d ax=%.2f ay=%.2f az=%.2f",
-       seaGravityReady ? 1 : 0, seaBaseAx, seaBaseAy, seaBaseAz);
-}
-
-void drawSea(bool force = false) {
-  const uint32_t now = millis();
-  if (!force && now - lastSeaDrawMs < kSeaFrameMs) return;
-  lastSeaDrawMs = now;
-
-  float ax = 0.0f;
-  float ay = 0.0f;
-  float az = 0.0f;
-  if (readAccel(ax, ay, az)) {
-    const float rawLeanX = applyLeanDeadzone(constrain((seaBaseAy - ay) * 1.45f,
-                                                       -1.0f, 1.0f));
-    const float rawGravityY = constrain(-ax, 0.0f, 1.0f);
-    seaGravityX = seaGravityX * 0.72f + rawLeanX * 0.28f;
-    seaGravityY = seaGravityY * 0.72f + rawGravityY * 0.28f;
-  }
-  seaWavePhase += 0.16f + fabsf(seaGravityX) * 0.05f;
-
-  M5.Display.setRotation(0);
-  if (!seaCanvas.width()) {
-    seaCanvas.setColorDepth(16);
-    seaCanvas.createSprite(M5.Display.width(), M5.Display.height());
-  }
-
-  constexpr uint16_t kWater = 0x04FF;
-  constexpr uint16_t kWaterDark = 0x0257;
-  constexpr uint16_t kWaterLight = 0x5DFF;
-  seaCanvas.fillScreen(TFT_BLACK);
-
-  const int centerX = seaCanvas.width() / 2;
-  constexpr int waterCenterY = 132;
-  const float down = max(seaGravityY, 0.18f);
-  const float slope = constrain(seaGravityX / down, -1.35f, 1.35f);
-  for (int x = 0; x < seaCanvas.width(); ++x) {
-    const float wave = sinf(seaWavePhase + x * 0.115f) * 2.0f;
-    const float surfaceY = waterCenterY - slope * (x - centerX) + wave;
-    for (int y = 25; y <= 226; ++y) {
-      if (!bottleInside(x, y)) continue;
-      const float depth = y - surfaceY;
-      if (depth >= 0.0f) {
-        const uint16_t color = ((x * 5 + y + static_cast<int>(seaWavePhase * 8)) % 17 == 0)
-                                   ? kWater
-                                   : kWaterDark;
-        seaCanvas.drawPixel(x, y, color);
-      } else if (depth >= -1.8f) {
-        seaCanvas.drawPixel(x, y, kWaterLight);
-      }
-    }
-  }
-
-  drawBottleFrame(seaCanvas);
-  seaCanvas.setTextDatum(top_center);
-  seaCanvas.setTextColor(TFT_DARKGREY, TFT_BLACK);
-  seaCanvas.setTextSize(1);
-  seaCanvas.setTextDatum(bottom_center);
-  seaCanvas.pushSprite(0, 0);
-}
-
-void enterSea() {
-  screen = Screen::Sea;
-  lastSeaDrawMs = 0;
-  M5.Display.setRotation(0);
-  M5.Display.fillScreen(TFT_BLACK);
-  calibrateSeaGravity();
-  drawSea(true);
-}
-
 bool readAverageAccel(float &ax, float &ay, float &az, int samples = 24) {
   float sx = 0.0f;
   float sy = 0.0f;
@@ -1612,7 +1537,7 @@ void savePomodoroStopped() {
 
 void drawClock(bool force = false) {
   const uint32_t now = millis();
-  const uint32_t refreshMs = ecoMode ? kEcoClockRefreshMs : kClockRefreshMs;
+  const uint32_t refreshMs = kClockRefreshMs;
   if (!force && now - lastClockDrawMs < refreshMs) return;
   lastClockDrawMs = now;
   const int rotation = clockRotationFromImu();
@@ -1648,7 +1573,7 @@ void drawClock(bool force = false) {
   if (!force && clockText == lastClockText) return;
 
   const String oldClockText = lastClockText;
-  const bool canAnimate = !ecoMode && !force && oldClockText.length() == 8;
+  const bool canAnimate = !powerPolicy.dimmed() && !powerPolicy.screenOff() && !force && oldClockText.length() == 8;
   lastClockText = clockText;
 
   if (portrait) {
@@ -1690,6 +1615,12 @@ void drawClock(bool force = false) {
 
 void enterSelectedApp() {
   if (menuIndex == 0) {
+    screen = Screen::Pet;
+    Pet::begin();
+    return;
+  }
+
+  if (menuIndex == 1) {
     screen = Screen::Clock;
     lastClockText = "";
     lastClockRotation = -1;
@@ -1697,27 +1628,29 @@ void enterSelectedApp() {
     return;
   }
 
-  if (menuIndex == 1) {
+  if (menuIndex == 2) {
     screen = Screen::PomodoroMenu;
     pomodoroMenuIndex = 0;
     drawPomodoroMenu();
     return;
   }
 
-  if (menuIndex == 2) {
+  if (menuIndex == 3) {
     screen = Screen::SandTimerSelect;
     SandTimer::drawSelect(sandTimerIndex);
     return;
   }
 
-  if (menuIndex == 3) {
+  if (menuIndex == 4) {
     screen = Screen::SuanGua;
     resetSuanGua();
     return;
   }
 
-  if (menuIndex == 4) {
-    enterSea();
+  if (menuIndex == 5) {
+    screen = Screen::DeviceInfo;
+    deviceInfoPage = 0;
+    drawDeviceInfo(true);
     return;
   }
 
@@ -1730,6 +1663,9 @@ void returnToMenu() {
   }
   if (screen == Screen::SandTimerRun || screen == Screen::SandTimerPrompt) {
     SandTimer::stop();
+  }
+  if (screen == Screen::Pet) {
+    Pet::stop();
   }
   M5.Display.setRotation(0);
   screen = Screen::Menu;
@@ -1764,11 +1700,8 @@ void setup() {
   randomSeed(esp_random());
   bootMs = millis();
   M5.Display.setRotation(1);
-  setDisplayBrightness(kDisplayBrightness);
-  lastUserActivityMs = millis();
-  LOGI("display", "brightness=%u ui_loop=%luHz clock_redraw=1Hz",
-       M5.Display.getBrightness(),
-       static_cast<unsigned long>(1000 / kUiFrameDelayMs));
+  powerPolicy.begin(kDisplayBrightness);
+  LOGI("display", "brightness=%u", M5.Display.getBrightness());
   imuReady = M5.Imu.getType() != m5::imu_none;
   battery.begin();
 
@@ -1782,10 +1715,6 @@ void setup() {
     LOGE("suangua", "history init failed");
   }
   const AppSettings &settings = appConfig.settings();
-  httpClient.setBaseUrl(settings.httpBaseUrl);
-  wsClient.onText([](const String &text) {
-    LOGI("ws", "text=%s", text.c_str());
-  });
 
   screen = Screen::Clock;
   lastClockText = "";
@@ -1793,7 +1722,6 @@ void setup() {
   drawClock(true);
   wifiPortal.begin(settings.deviceName);
   timeSync.begin(settings);
-  wsClient.begin(settings.wsHost, settings.wsPort, settings.wsPath);
 
   lastClockText = "";
   drawClock(true);
@@ -1803,14 +1731,16 @@ void loop() {
   M5.update();
   const bool btnA = M5.BtnA.wasPressed();
   const bool btnB = M5.BtnB.wasPressed();
-  const bool shaken = didShake();
+  const bool animatedScreen = isAnimatedScreen();
+  const bool shaken = powerPolicy.shouldSampleImu(screenAllowsShake(), animatedScreen) && didShake();
   if (btnA || btnB || shaken) noteUserActivity();
-  updateEcoMode();
+  powerPolicy.update(animatedScreen);
 
-  wifiPortal.loop();
-  timeSync.loop(wifiPortal.connected());
+  wifiPortal.loop(!timeSync.ready());
+  if (timeSync.loop(wifiPortal.connected())) {
+    wifiPortal.shutdown();
+  }
   battery.loop();
-  wsClient.loop();
 
   if (screen == Screen::Menu) {
     if (shaken) {
@@ -1912,12 +1842,18 @@ void loop() {
         promptIndex = 0;
         SandTimer::drawPrompt(promptIndex);
       }
-    } else if (screen == Screen::Sea) {
+    } else if (screen == Screen::Pet) {
       if (btnA) {
-        calibrateSeaGravity();
-        drawSea(true);
+        Pet::interact();
       } else {
-        drawSea();
+        Pet::draw();
+      }
+    } else if (screen == Screen::DeviceInfo) {
+      if (btnA) {
+        deviceInfoPage = (deviceInfoPage + 1) % 2;
+        drawDeviceInfo(true);
+      } else {
+        drawDeviceInfo();
       }
     } else if (screen == Screen::ImuCal) {
       if (btnA) {
@@ -1926,5 +1862,5 @@ void loop() {
     }
   }
 
-  delay(kUiFrameDelayMs);
+  delay(powerPolicy.loopDelayMs(isAnimatedScreen()));
 }

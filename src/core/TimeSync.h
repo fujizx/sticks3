@@ -8,7 +8,7 @@
 class TimeSync {
  public:
   void begin(const AppSettings &settings);
-  void loop(bool wifiConnected);
+  bool loop(bool wifiConnected);
   bool ready() const;
   String timeText() const;
   String dateText() const;

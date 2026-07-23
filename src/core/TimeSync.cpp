@@ -3,7 +3,7 @@
 #include "AppLog.h"
 
 namespace {
-constexpr uint32_t kCheckIntervalMs = 5000;
+constexpr uint32_t kCheckIntervalMs = 1000;
 }
 
 void TimeSync::begin(const AppSettings &settings) {
@@ -15,18 +15,20 @@ void TimeSync::begin(const AppSettings &settings) {
   LOGI("time", "ntp configured tz=%s", settings.timezone.c_str());
 }
 
-void TimeSync::loop(bool wifiConnected) {
-  if (!configured_ || !wifiConnected) return;
+bool TimeSync::loop(bool wifiConnected) {
+  if (!configured_ || ready_ || !wifiConnected) return false;
 
   const uint32_t now = millis();
-  if (now - lastCheckMs_ < kCheckIntervalMs) return;
+  if (now - lastCheckMs_ < kCheckIntervalMs) return false;
   lastCheckMs_ = now;
 
   struct tm info;
   if (getLocalTime(&info, 50)) {
-    if (!ready_) LOGI("time", "ntp synced");
     ready_ = true;
+    LOGI("time", "ntp synced");
+    return true;
   }
+  return false;
 }
 
 bool TimeSync::ready() const {

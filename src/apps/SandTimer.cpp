@@ -1,4 +1,4 @@
-﻿#include "SandTimer.h"
+#include "SandTimer.h"
 
 #include <algorithm>
 
@@ -6,7 +6,7 @@
 
 namespace SandTimer {
 namespace {
-constexpr uint32_t kFrameMs = 45;
+constexpr uint32_t kFrameMs = 67;
 constexpr uint8_t kDoneVolume = 77;
 constexpr float kInvertThreshold = -0.70f;
 constexpr float kLeanDeadzone = 0.08f;
