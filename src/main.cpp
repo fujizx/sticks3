@@ -11,6 +11,7 @@
 #include "core/PomodoroHistory.h"
 #include "core/TimeSync.h"
 #include "core/WifiPortal.h"
+#include "apps/SandTimer.h"
 #include "iching_data.h"
 
 namespace {
@@ -52,6 +53,9 @@ enum class Screen {
   PomodoroRecords,
   PomodoroRun,
   PomodoroPrompt,
+  SandTimerSelect,
+  SandTimerRun,
+  SandTimerPrompt,
   SuanGua,
   Sea,
   ImuCal,
@@ -60,6 +64,7 @@ enum class Screen {
 constexpr const char *kMenuItems[] = {
     "Clock",
     "Pomodoro",
+    "SandTimer",
     "SuanGua",
     "Sea",
     "IMU Cal",
@@ -75,6 +80,7 @@ Screen screen = Screen::Menu;
 int menuIndex = 0;
 int pomodoroMenuIndex = 0;
 int pomodoroIndex = 1;
+int sandTimerIndex = 2;
 int promptIndex = 0;
 int recordPage = 0;
 int imuCalStep = 0;
@@ -518,7 +524,6 @@ void drawTrigramHint() {
     display.drawString(String("上卦 ") + getTrigramNameByBits(upperBits) + " " + getTrigramMnemonicByBits(upperBits), display.width() / 2, 222);
   }
 }
-
 void drawSuanGua() {
   M5.Display.setRotation(0);
   auto &display = M5.Display;
@@ -1205,7 +1210,6 @@ void drawHourglassFrame(Gfx &gfx, int centerX, int topY, int bottomY) {
   gfx.drawLine(waistRight, waistY, bottomRight, bottomY, kGlass);
   gfx.drawLine(bottomLeft, bottomY, bottomRight, bottomY, kGlass);
 }
-
 void drawPomodoroStaticRun() {
   M5.Display.setRotation(0);
   auto &display = M5.Display;
@@ -1701,12 +1705,18 @@ void enterSelectedApp() {
   }
 
   if (menuIndex == 2) {
+    screen = Screen::SandTimerSelect;
+    SandTimer::drawSelect(sandTimerIndex);
+    return;
+  }
+
+  if (menuIndex == 3) {
     screen = Screen::SuanGua;
     resetSuanGua();
     return;
   }
 
-  if (menuIndex == 3) {
+  if (menuIndex == 4) {
     enterSea();
     return;
   }
@@ -1717,6 +1727,9 @@ void enterSelectedApp() {
 void returnToMenu() {
   if (screen == Screen::PomodoroRun || screen == Screen::PomodoroPrompt) {
     savePomodoroStopped();
+  }
+  if (screen == Screen::SandTimerRun || screen == Screen::SandTimerPrompt) {
+    SandTimer::stop();
   }
   M5.Display.setRotation(0);
   screen = Screen::Menu;
@@ -1847,6 +1860,29 @@ void loop() {
       if (btnA) {
         startPomodoro();
       }
+    } else if (screen == Screen::SandTimerSelect) {
+      if (btnB) {
+        sandTimerIndex = (sandTimerIndex + 1) % SandTimer::durationCount();
+        SandTimer::drawSelect(sandTimerIndex);
+      }
+      if (btnA) {
+        SandTimer::start(sandTimerIndex);
+        screen = Screen::SandTimerRun;
+      }
+    } else if (screen == Screen::SandTimerPrompt) {
+      if (btnB) {
+        promptIndex = (promptIndex + 1) % 2;
+        SandTimer::drawPrompt(promptIndex);
+      }
+      if (btnA) {
+        if (promptIndex == 0) {
+          SandTimer::stop();
+          SandTimer::start(sandTimerIndex);
+          screen = Screen::SandTimerRun;
+        } else {
+          returnToMenu();
+        }
+      }
     } else if (screen == Screen::PomodoroPrompt) {
       if (btnB) {
         promptIndex = (promptIndex + 1) % 2;
@@ -1870,6 +1906,12 @@ void loop() {
       drawClock();
     } else if (screen == Screen::PomodoroRun) {
       drawPomodoroRun();
+    } else if (screen == Screen::SandTimerRun) {
+      if (SandTimer::drawRun()) {
+        screen = Screen::SandTimerPrompt;
+        promptIndex = 0;
+        SandTimer::drawPrompt(promptIndex);
+      }
     } else if (screen == Screen::Sea) {
       if (btnA) {
         calibrateSeaGravity();
