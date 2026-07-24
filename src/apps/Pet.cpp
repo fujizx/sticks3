@@ -113,15 +113,15 @@ EyeShape eye(int width, int height, int y, int topCut, int bottomCut, int tilt,
 FacePose poseFor(Mood value) {
   switch (value) {
     case Mood::BlinkHigh:
-      return {eye(82, 8, 49, 0, 0, 0), eye(82, 8, 49, 0, 0, 0), 18};
+      return {eye(82, 66, 56, 0, 0, 0, -3, 0, 12), eye(82, 66, 56, 0, 0, 0, 3, 0, 12), 18};
     case Mood::BlinkLow:
-      return {eye(82, 8, 67, 0, 0, 0), eye(82, 8, 67, 0, 0, 0), 18};
+      return {eye(82, 66, 56, 0, 0, 0, -3, 0, 12), eye(82, 66, 56, 0, 0, 0, 3, 0, 12), 18};
     case Mood::Happy:
-      return {eye(82, 38, 58, 24, 0, 0, 0, 0, 0, true), eye(82, 38, 58, 24, 0, 0, 0, 0, 0, true), 18};
+      return {eye(82, 66, 56, 0, 0, 0, -3, 0, 12), eye(82, 66, 56, 0, 0, 0, 3, 0, 12), 18};
     case Mood::Glee:
-      return {eye(82, 34, 55, 27, 0, 0, 0, 0, 0, true), eye(82, 34, 55, 27, 0, 0, 0, 0, 0, true), 16};
+      return {eye(88, 70, 54, 0, 0, 0, -4, -2, 12, true), eye(88, 70, 54, 0, 0, 0, 4, -2, 12, true), 12};
     case Mood::Curious:
-      return {eye(68, 58, 59, 3, 0, -5, -5, 1, 11), eye(86, 74, 54, 0, 0, 4, 6, -1, 14), 20};
+      return {eye(82, 66, 56, 0, 0, 0, -2, 0, 12), eye(82, 66, 56, 0, 0, 0, 2, 0, 12), 18};
     case Mood::Sleepy:
       return {eye(84, 30, 61, 24, 5, -3, 0, 3, 8), eye(84, 30, 61, 24, 5, 3, 0, 3, 8), 17};
     case Mood::Sleeping:
@@ -131,9 +131,9 @@ FacePose poseFor(Mood value) {
     case Mood::Excited:
       return {eye(88, 78, 54, 0, 0, 0, -4, -2, 12, true), eye(88, 78, 54, 0, 0, 0, 4, -2, 12, true), 12};
     case Mood::Dizzy:
-      return {eye(76, 60, 57, 3, 3, 0, 0, 0, 0, false, true), eye(76, 60, 57, 3, 3, 0, 0, 0, 0, false, true), 20};
+      return {eye(84, 66, 56, 2, 2, 0, 0, 0, 0, false, true), eye(84, 66, 56, 2, 2, 0, 0, 0, 0, false, true), 16};
     case Mood::LowBattery:
-      return {eye(80, 39, 61, 17, 24, -10, 0, 6, 0), eye(80, 39, 61, 17, 24, 10, 0, 6, 0), 18};
+      return {eye(82, 28, 66, 21, 9, -7, 0, 4, 0), eye(82, 28, 66, 21, 9, 7, 0, 4, 0), 18};
     case Mood::Charging:
       return {eye(84, 70, 55, 0, 0, 0, 0, 0, 11, true), eye(84, 70, 55, 0, 0, 0, 0, 0, 11, true), 16};
     case Mood::Proud:
@@ -158,9 +158,9 @@ FacePose poseFor(Mood value) {
 void paletteFor(Mood value, uint16_t &hi, uint16_t &mid, uint16_t &low) {
   switch (value) {
     case Mood::LowBattery:
-      hi = kRedHi;
-      mid = kRedMid;
-      low = 0x6000;
+      hi = 0xFBEF;
+      mid = 0xB104;
+      low = 0x3000;
       return;
     case Mood::Charging:
       hi = kGreenHi;
@@ -205,6 +205,23 @@ void drawBackground() {
   canvas.drawFastHLine(10, 101, w - 20, 0x0841);
 }
 
+void drawFaceplate() {
+  const int x = 7;
+  const int y = 15;
+  const int w = canvas.width() - 14;
+  const int h = 84;
+  canvas.fillRoundRect(x + 2, y + 4, w, h, 18, 0x0000);
+  canvas.fillRoundRect(x, y, w, h, 18, 0x0020);
+  canvas.drawRoundRect(x, y, w, h, 18, 0x39E7);
+  canvas.drawRoundRect(x + 2, y + 2, w - 4, h - 4, 16, 0x1082);
+  canvas.drawRoundRect(x + 4, y + 4, w - 8, h - 8, 14, 0x0841);
+  canvas.drawFastHLine(x + 18, y + 8, w - 36, 0x7BEF);
+  canvas.drawFastHLine(x + 22, y + 10, w - 52, 0x2104);
+  canvas.fillCircle(x + 19, y + 15, 4, 0xFFFF);
+  canvas.fillCircle(x + 25, y + 12, 2, 0x7BEF);
+  canvas.drawFastHLine(x + 25, y + h - 9, w - 50, 0x0841);
+}
+
 void cutLid(int cx, int cy, int w, int h, int cut, int tilt, bool top) {
   if (cut <= 0) return;
   const int left = cx - w / 2 - 3;
@@ -231,12 +248,23 @@ void drawStar(int x, int y, uint16_t color) {
   canvas.drawLine(x + 5, y - 5, x - 5, y + 5, color);
 }
 
+void drawThickLine(int x0, int y0, int x1, int y1, uint16_t color) {
+  canvas.drawLine(x0, y0, x1, y1, color);
+  canvas.drawLine(x0 + 1, y0, x1 + 1, y1, color);
+  canvas.drawLine(x0 - 1, y0, x1 - 1, y1, color);
+  canvas.drawLine(x0, y0 + 1, x1, y1 + 1, color);
+  canvas.drawLine(x0, y0 - 1, x1, y1 - 1, color);
+}
+
 void drawSpiral(int x, int y, uint16_t color) {
-  canvas.drawRect(x - 13, y - 13, 26, 26, color);
-  canvas.drawRect(x - 8, y - 8, 17, 17, color);
-  canvas.drawLine(x + 8, y - 8, x + 8, y + 4, color);
-  canvas.drawLine(x + 8, y + 4, x - 2, y + 4, color);
-  canvas.drawPixel(x, y, color);
+  const int wobble = (frame / 4) % 2;
+  for (int i = 0; i < 2; ++i) {
+    canvas.drawRect(x - 14 + i, y - 14 + i + wobble, 28 - i * 2, 28 - i * 2, color);
+    canvas.drawRect(x - 9 + i, y - 9 + i + wobble, 18 - i * 2, 18 - i * 2, color);
+  }
+  drawThickLine(x + 9, y - 9 + wobble, x + 9, y + 4 + wobble, color);
+  drawThickLine(x + 9, y + 4 + wobble, x - 3, y + 4 + wobble, color);
+  canvas.fillCircle(x, y + wobble, 2, color);
 }
 
 void drawHeart(int x, int y, int size, uint16_t color) {
@@ -254,29 +282,64 @@ void drawPupil(int x, int y, int radius, uint16_t hi) {
   canvas.fillCircle(x + radius / 3, y + radius / 3, 2, 0x39E7);
 }
 
+void drawHappyArcEye(int cx, int cy, int w, uint16_t hi, uint16_t mid, uint16_t low) {
+  const int left = cx - w / 2 + 13;
+  const int right = cx + w / 2 - 13;
+  const int x1 = cx - 24;
+  const int x2 = cx - 10;
+  const int x3 = cx + 10;
+  const int x4 = cx + 24;
+  const int y0 = cy + 7;
+  const int y1 = cy - 5;
+  const int y2 = cy - 10;
+
+  for (int offset = 4; offset >= 0; --offset) {
+    const uint16_t color = offset > 1 ? low : mid;
+    drawThickLine(left, y0 + offset, x1, y1 + offset / 2, color);
+    drawThickLine(x1, y1 + offset / 2, x2, y2 + offset / 3, color);
+    drawThickLine(x2, y2 + offset / 3, x3, y2 + offset / 3, color);
+    drawThickLine(x3, y2 + offset / 3, x4, y1 + offset / 2, color);
+    drawThickLine(x4, y1 + offset / 2, right, y0 + offset, color);
+  }
+  drawThickLine(left, y0, x1, y1, hi);
+  drawThickLine(x1, y1, x2, y2, hi);
+  drawThickLine(x2, y2, x3, y2, hi);
+  drawThickLine(x3, y2, x4, y1, hi);
+  drawThickLine(x4, y1, right, y0, hi);
+}
+
 void drawEyeCore(int cx, const EyeShape &shape, bool left, uint16_t hi, uint16_t mid, uint16_t low) {
   const int w = shape.width;
   const int h = shape.height;
   const int cy = shape.y;
   const int r = min(24, max(7, h / 3));
   const int tilt = left ? shape.tilt : -shape.tilt;
+  const int x = cx - w / 2;
+  const int y = cy - h / 2;
 
-  canvas.fillRoundRect(cx - w / 2 + 4, cy - h / 2 + 7, w, h, r, 0x0020);
-  canvas.fillRoundRect(cx - w / 2 - 2, cy - h / 2 - 2, w + 4, h + 4, r + 2, low);
-  canvas.fillRoundRect(cx - w / 2, cy - h / 2, w, h, r, mid);
-
-  for (int i = 0; i < h / 2; i += 3) {
-    const int inset = 4 + i / 5;
-    canvas.drawRoundRect(cx - w / 2 + inset, cy - h / 2 + 3 + i,
-                         w - inset * 2, max(5, h - i * 2), max(5, r - i / 4), hi);
+  if ((mood == Mood::Happy || mood == Mood::Glee) && shape.pupilRadius == 0) {
+    drawHappyArcEye(cx, cy, w, hi, mid, low);
+    if (shape.star) drawStar(cx + w / 2 - 13, cy - 18, 0xFFFF);
+    return;
   }
-  canvas.fillRoundRect(cx - w / 2 + 11, cy - h / 2 + 7, w - 22, max(5, h / 4), r / 2, hi);
-  canvas.drawFastHLine(cx - w / 2 + 14, cy + h / 2 - 7, w - 28, low);
 
-  cutLid(cx, cy, w + 6, h + 6, shape.topCut, tilt, true);
-  cutLid(cx, cy, w + 6, h + 6, shape.bottomCut, -tilt / 2, false);
+  canvas.fillRoundRect(x + 4, y + 6, w, h, r, 0x0020);
+  canvas.fillRoundRect(x - 3, y - 3, w + 6, h + 6, r + 3, low);
+  canvas.fillRoundRect(x - 1, y - 1, w + 2, h + 2, r + 1, mid);
+  canvas.fillRoundRect(x + 3, y + 4, w - 6, h - 8, max(4, r - 3), mid);
 
-  if (mood == Mood::Sleeping || mood == Mood::BlinkHigh || mood == Mood::BlinkLow) {
+  const int topH = max(4, h / 4);
+  const int bottomH = max(4, h / 3);
+  if (h > 14) {
+    canvas.fillRoundRect(x + 8, y + 6, w - 16, topH, max(3, topH / 2), hi);
+    canvas.fillRoundRect(x + 6, y + h - bottomH - 2, w - 12, bottomH, max(4, bottomH / 2), low);
+    canvas.drawRoundRect(x + 2, y + 2, w - 4, h - 4, max(5, r - 2), hi);
+  }
+
+  cutLid(cx, cy, w + 8, h + 8, shape.topCut, tilt, true);
+  cutLid(cx, cy, w + 8, h + 8, shape.bottomCut, -tilt / 2, false);
+
+  if (mood == Mood::Sleeping || h <= 12) {
     canvas.drawFastHLine(cx - w / 2 + 8, cy, w - 16, hi);
     canvas.drawFastHLine(cx - w / 2 + 8, cy + 1, w - 16, low);
     return;
@@ -285,34 +348,293 @@ void drawEyeCore(int cx, const EyeShape &shape, bool left, uint16_t hi, uint16_t
   if (shape.spiral) {
     drawSpiral(cx, cy, kBg);
   } else if (shape.heart) {
-    drawHeart(cx, cy + 2, min(w, h) / 2, kPinkMid);
+    const int beat = ((frame / 4) % 2 == 0) ? 3 : 0;
+    drawHeart(cx, cy + 2, min(w, h) / 2 + beat, kPinkMid);
   } else if (shape.pupilRadius > 0) {
     drawPupil(cx + shape.gazeX, cy + shape.gazeY, shape.pupilRadius, hi);
   }
 
-  canvas.fillCircle(cx - w / 2 + 21, cy - h / 2 + 16, 5, 0xFFFF);
-  canvas.fillCircle(cx - w / 2 + 29, cy - h / 2 + 23, 2, 0xFFFF);
+  if (h > 18) {
+    canvas.fillCircle(cx - w / 2 + 18, cy - h / 2 + 13, 5, 0xFFFF);
+    canvas.fillCircle(cx - w / 2 + 27, cy - h / 2 + 20, 2, 0xFFFF);
+  }
   if (shape.star) {
     drawStar(cx + w / 2 - 17, cy - h / 2 + 16, 0xFFFF);
   }
 }
 
 void drawChargingAccent(uint16_t hi) {
-  canvas.drawLine(120, 88, 112, 103, hi);
-  canvas.drawLine(112, 103, 125, 100, hi);
-  canvas.drawLine(125, 100, 117, 113, hi);
+  const uint16_t color = ((frame / 5) % 2 == 0) ? hi : kGreenMid;
+  drawThickLine(120, 88, 112, 103, color);
+  drawThickLine(112, 103, 125, 100, color);
+  drawThickLine(125, 100, 117, 113, color);
+  if ((frame / 6) % 2 == 0) {
+    canvas.fillCircle(143, 86, 1, color);
+    canvas.fillCircle(97, 111, 1, color);
+  }
 }
 
 void drawLowBatteryAccent(uint16_t hi) {
-  canvas.drawRect(106, 91, 28, 12, hi);
-  canvas.fillRect(134, 95, 3, 4, hi);
-  canvas.fillRect(109, 94, 6, 6, hi);
+  const uint16_t dim = ((frame / 10) % 2 == 0) ? hi : 0x6800;
+  canvas.drawRect(102, 85, 36, 16, dim);
+  canvas.fillRect(138, 90, 3, 6, dim);
+  canvas.fillRect(106, 89, 5, 8, dim);
+  canvas.drawFastHLine(116, 93, 13, 0x3000);
 }
 
 void drawSleepAccent(uint16_t hi) {
+  if ((frame / 12) % 2 != 0) return;
   canvas.drawLine(110, 90, 122, 90, hi);
   canvas.drawLine(122, 90, 110, 101, hi);
   canvas.drawLine(110, 101, 124, 101, hi);
+}
+
+void animateEyePose(FacePose &pose) {
+  const int step = (frame / 6) % 4;
+  const int wave4[4] = {0, 1, 3, 1};
+  switch (mood) {
+    case Mood::Idle: {
+      const int lookX[4] = {-12, 0, 12, 0};
+      const int lookY[4] = {0, -2, 0, 3};
+      pose.left.gazeX += lookX[step];
+      pose.right.gazeX += lookX[step];
+      pose.left.gazeY += lookY[step];
+      pose.right.gazeY += lookY[step];
+      break;
+    }
+    case Mood::BlinkHigh:
+    case Mood::BlinkLow: {
+      const int close[4] = {0, 32, 58, 32};
+      const int amount = close[step];
+      const int targetY = (mood == Mood::BlinkHigh) ? 49 : 67;
+      pose.left.height = max(8, 66 - amount);
+      pose.right.height = pose.left.height;
+      pose.left.y = 56 + ((targetY - 56) * amount) / 58;
+      pose.right.y = pose.left.y;
+      pose.left.topCut = amount / 3;
+      pose.right.topCut = amount / 3;
+      pose.left.bottomCut = amount / 4;
+      pose.right.bottomCut = amount / 4;
+      if (amount > 40) {
+        pose.left.pupilRadius = 0;
+        pose.right.pupilRadius = 0;
+      }
+      break;
+    }
+    case Mood::Happy: {
+      const int height[4] = {66, 50, 14, 50};
+      const int y[4] = {56, 54, 55, 54};
+      const int topCut[4] = {0, 12, 0, 12};
+      const int bottomCut[4] = {0, 1, 0, 1};
+      const int pupil[4] = {12, 9, 0, 9};
+      pose.left.height = height[step];
+      pose.right.height = height[step];
+      pose.left.y = y[step];
+      pose.right.y = y[step];
+      pose.left.topCut = topCut[step];
+      pose.right.topCut = topCut[step];
+      pose.left.bottomCut = bottomCut[step];
+      pose.right.bottomCut = bottomCut[step];
+      pose.left.pupilRadius = pupil[step];
+      pose.right.pupilRadius = pupil[step];
+      pose.left.gazeY -= step == 1 ? 2 : 0;
+      pose.right.gazeY -= step == 1 ? 2 : 0;
+      break;
+    }
+    case Mood::Glee: {
+      const int height[4] = {70, 76, 16, 64};
+      const int y[4] = {54, 49, 52, 53};
+      const int pupil[4] = {12, 10, 0, 9};
+      pose.left.height = height[step];
+      pose.right.height = height[step];
+      pose.left.y = y[step];
+      pose.right.y = y[step];
+      pose.left.topCut = step == 3 ? 4 : 0;
+      pose.right.topCut = pose.left.topCut;
+      pose.left.bottomCut = 0;
+      pose.right.bottomCut = 0;
+      pose.left.pupilRadius = pupil[step];
+      pose.right.pupilRadius = pupil[step];
+      pose.left.gazeY -= step == 1 ? 4 : 0;
+      pose.right.gazeY -= step == 1 ? 4 : 0;
+      break;
+    }
+    case Mood::Curious: {
+      const int width[4] = {82, 88, 96, 90};
+      const int height[4] = {66, 72, 82, 74};
+      const int y[4] = {56, 53, 50, 52};
+      const int gazeX[4] = {0, 0, 4, 8};
+      const int gazeY[4] = {0, -4, -6, -2};
+      const int pupil[4] = {12, 13, 15, 14};
+      pose.left.width = width[step];
+      pose.right.width = width[step];
+      pose.left.height = height[step];
+      pose.right.height = height[step];
+      pose.left.y = y[step];
+      pose.right.y = y[step];
+      pose.left.topCut = 0;
+      pose.right.topCut = 0;
+      pose.left.bottomCut = 0;
+      pose.right.bottomCut = 0;
+      pose.left.tilt = step == 3 ? -2 : 0;
+      pose.right.tilt = step == 3 ? 2 : 0;
+      pose.left.gazeX = gazeX[step] - 2;
+      pose.right.gazeX = gazeX[step] + 2;
+      pose.left.gazeY = gazeY[step];
+      pose.right.gazeY = gazeY[step];
+      pose.left.pupilRadius = pupil[step];
+      pose.right.pupilRadius = pupil[step];
+      break;
+    }
+    case Mood::Sleepy: {
+      const int droop[4] = {1, 3, 5, 3};
+      pose.left.topCut += droop[step];
+      pose.right.topCut += droop[step];
+      pose.left.height -= droop[step];
+      pose.right.height -= droop[step];
+      pose.left.y += droop[step] / 2;
+      pose.right.y += droop[step] / 2;
+      break;
+    }
+    case Mood::Sleeping: {
+      const int y[4] = {0, 1, 0, -1};
+      pose.left.y += y[step];
+      pose.right.y += y[step];
+      pose.left.height = 8 + (step == 1 ? 1 : 0);
+      pose.right.height = pose.left.height;
+      break;
+    }
+    case Mood::Hungry: {
+      const int grow[4] = {0, 4, 7, 2};
+      const int inward[4] = {0, 1, 6, 2};
+      pose.left.width += grow[step];
+      pose.right.width += grow[step];
+      pose.left.height += grow[step];
+      pose.right.height += grow[step];
+      pose.left.gazeX += inward[step];
+      pose.right.gazeX -= inward[step];
+      pose.left.gazeY -= step == 2 ? 2 : 0;
+      pose.right.gazeY -= step == 2 ? 2 : 0;
+      pose.left.bottomCut += step == 3 ? 6 : 0;
+      pose.right.bottomCut += step == 3 ? 6 : 0;
+      break;
+    }
+    case Mood::Worried: {
+      const int tremble[4] = {-2, 1, 2, -1};
+      const int rounder[4] = {0, 1, 7, 2};
+      pose.left.gazeX += 4 + tremble[step];
+      pose.right.gazeX -= 4 + tremble[step];
+      pose.left.width += rounder[step];
+      pose.right.width += rounder[step];
+      pose.left.height += rounder[step];
+      pose.right.height += rounder[step];
+      pose.left.topCut -= min(pose.left.topCut, step == 2 ? 4 : 0);
+      pose.right.topCut -= min(pose.right.topCut, step == 2 ? 4 : 0);
+      break;
+    }
+    case Mood::Scared: {
+      const int wide[4] = {0, 4, 10, 3};
+      const int tremble[4] = {0, -2, 3, -1};
+      pose.left.width += wide[step];
+      pose.right.width += wide[step];
+      pose.left.height += wide[step];
+      pose.right.height += wide[step];
+      pose.left.gazeX += 4 + tremble[step];
+      pose.right.gazeX -= 4 + tremble[step];
+      pose.left.gazeY += step == 2 ? 3 : 0;
+      pose.right.gazeY += step == 2 ? 3 : 0;
+      break;
+    }
+    case Mood::Excited: {
+      const int bounce[4] = {0, -3, 1, -2};
+      pose.left.y += bounce[step];
+      pose.right.y += bounce[step];
+      pose.left.height += wave4[step] * 2;
+      pose.right.height += wave4[step] * 2;
+      pose.left.gazeY -= wave4[step];
+      pose.right.gazeY -= wave4[step];
+      break;
+    }
+    case Mood::Dizzy: {
+      pose.left.width += wave4[step] * 2;
+      pose.right.width += wave4[(step + 2) % 4] * 2;
+      pose.left.height += wave4[(step + 1) % 4] * 2;
+      pose.right.height += wave4[(step + 3) % 4] * 2;
+      pose.left.y += step - 1;
+      pose.right.y -= step - 1;
+      break;
+    }
+    case Mood::LowBattery: {
+      const int sag[4] = {1, 2, 4, 2};
+      pose.left.y += sag[step];
+      pose.right.y += sag[step];
+      pose.left.height -= sag[step] / 2;
+      pose.right.height -= sag[step] / 2;
+      pose.left.topCut += sag[step];
+      pose.right.topCut += sag[step];
+      break;
+    }
+    case Mood::Charging: {
+      const int charge[4] = {0, 3, 6, 3};
+      pose.left.height += charge[step];
+      pose.right.height += charge[step];
+      pose.left.gazeY -= charge[step] / 2;
+      pose.right.gazeY -= charge[step] / 2;
+      break;
+    }
+    case Mood::Love: {
+      const int beat[4] = {0, 2, 5, 2};
+      pose.left.width += beat[step];
+      pose.right.width += beat[step];
+      pose.left.height += beat[step];
+      pose.right.height += beat[step];
+      pose.left.y -= beat[step] / 2;
+      pose.right.y -= beat[step] / 2;
+      break;
+    }
+    case Mood::Proud: {
+      const int lift[4] = {0, 2, 5, 2};
+      pose.left.topCut += lift[step];
+      pose.right.topCut += step == 2 ? lift[step] + 4 : lift[step];
+      pose.left.tilt -= lift[step];
+      pose.right.tilt += lift[step];
+      pose.left.gazeY -= 1 + lift[step] / 2;
+      pose.right.gazeY -= 1 + lift[step] / 2;
+      break;
+    }
+    case Mood::Grumpy: {
+      const int press[4] = {0, 3, 7, 4};
+      pose.left.topCut += press[step];
+      pose.right.topCut += press[step];
+      pose.left.height -= press[step] / 2;
+      pose.right.height -= press[step] / 2;
+      pose.left.gazeX += step == 2 ? 6 : 2;
+      pose.right.gazeX -= step == 2 ? 6 : 2;
+      break;
+    }
+    case Mood::Skeptic: {
+      const int squint[4] = {0, 3, 6, 1};
+      pose.left.topCut += squint[step];
+      pose.right.bottomCut += squint[step];
+      pose.left.gazeX += step == 2 ? 5 : 1;
+      pose.right.gazeX += step == 2 ? 5 : 1;
+      pose.left.y += step == 3 ? 2 : 0;
+      pose.right.y -= step == 3 ? 2 : 0;
+      break;
+    }
+    case Mood::Annoyed: {
+      const int side[4] = {0, 2, 7, 3};
+      pose.left.topCut += step == 1 ? 2 : 0;
+      pose.right.topCut += step == 2 ? 7 : 2;
+      pose.left.height -= step == 2 ? 3 : 0;
+      pose.right.height -= side[step] / 2;
+      pose.left.gazeX += side[step];
+      pose.right.gazeX += side[step];
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 void drawLabel() {
@@ -337,17 +659,22 @@ void drawScene() {
   uint16_t low = kCyanLow;
   paletteFor(mood, hi, mid, low);
   FacePose pose = poseFor(mood);
-  const int pulse = (mood == Mood::Excited || mood == Mood::Charging || mood == Mood::Love)
-                        ? ((frame % 6) < 3 ? -2 : 1)
-                        : 0;
+  int pulse = 0;
+  if (mood == Mood::Excited || mood == Mood::Charging || mood == Mood::Love) {
+    pulse = ((frame % 6) < 3 ? -2 : 1);
+  } else if (mood == Mood::LowBattery) {
+    pulse = ((frame / 14) % 2 == 0 ? 1 : 3);
+  }
   pose.left.y += pulse;
   pose.right.y += pulse;
+  animateEyePose(pose);
 
   const int w = canvas.width();
   const int leftX = w / 2 - pose.left.width / 2 - pose.gap / 2;
   const int rightX = w / 2 + pose.right.width / 2 + pose.gap / 2;
 
   drawBackground();
+  drawFaceplate();
   drawEyeCore(leftX, pose.left, true, hi, mid, low);
   drawEyeCore(rightX, pose.right, false, hi, mid, low);
   if (mood == Mood::Charging) drawChargingAccent(hi);
